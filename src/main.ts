@@ -9,8 +9,17 @@ import {
   BridgeClient,
   type BridgeConnectionState,
 } from "./bridge/bridge-client";
+import { EditorApi } from "./bridge/editor-api";
+import {
+  diagnosticsViewType,
+  RiebeckiteDiagnosticsView,
+} from "./diagnostics/diagnostics-view";
 import { ResourceRegistry } from "./lifecycle/resource-registry";
 import { previewViewType, RiebeckitePreviewView } from "./preview/preview-view";
+import {
+  publicationViewType,
+  RiebeckitePublicationView,
+} from "./publication/publication-view";
 import {
   defaultSettings,
   parseSettings,
@@ -24,6 +33,8 @@ export default class RiebeckitePlugin extends Plugin {
   readonly bridge = this.resources.add(
     new BridgeClient((input) => requestUrl(input)),
   );
+  readonly editor = new EditorApi(this.bridge, () => this.settings.bridgeToken);
+  private refreshTimer: number | undefined;
 
   async onload(): Promise<void> {
     try {
@@ -33,19 +44,36 @@ export default class RiebeckitePlugin extends Plugin {
         previewViewType,
         (leaf) => new RiebeckitePreviewView(leaf, this),
       );
+      this.registerView(
+        publicationViewType,
+        (leaf) => new RiebeckitePublicationView(leaf, this),
+      );
+      this.registerView(
+        diagnosticsViewType,
+        (leaf) => new RiebeckiteDiagnosticsView(leaf, this),
+      );
       this.registerEvent(
-        this.app.workspace.on(
-          "active-leaf-change",
-          () => void this.refreshPreviews(),
+        this.app.workspace.on("active-leaf-change", () =>
+          this.scheduleRefreshViews(),
         ),
       );
       this.registerEvent(
-        this.app.vault.on("modify", () => void this.refreshPreviews()),
+        this.app.vault.on("modify", () => this.scheduleRefreshViews()),
       );
       this.addCommand({
         id: "open-settings",
         name: "Open settings",
         callback: () => this.openSettings(),
+      });
+      this.addCommand({
+        id: "open-publication-manager",
+        name: "Open Publication Manager",
+        callback: () => void this.openPublication(),
+      });
+      this.addCommand({
+        id: "open-diagnostics",
+        name: "Open Document Diagnostics",
+        callback: () => void this.openDiagnostics(),
       });
       this.addCommand({
         id: "open-live-preview",
@@ -72,6 +100,7 @@ export default class RiebeckitePlugin extends Plugin {
         name: "Disconnect from Riebeckite",
         callback: () => {
           this.bridge.disconnect();
+          void this.refreshViews();
           new Notice("Disconnected from Riebeckite.");
         },
       });
@@ -89,6 +118,7 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   onunload(): void {
+    if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer);
     this.resources.dispose();
   }
 
@@ -102,6 +132,7 @@ export default class RiebeckitePlugin extends Plugin {
       this.settings.serverUrl,
       this.settings.bridgeToken,
     );
+    if (state.kind === "connected") await this.refreshViews();
     new Notice(connectionMessage(state));
     return state;
   }
@@ -119,7 +150,7 @@ export default class RiebeckitePlugin extends Plugin {
     app.setting.openTabById(this.manifest.id);
   }
 
-  private async openPreview(): Promise<void> {
+  async openPreview(): Promise<void> {
     const leaf = this.app.workspace.getRightLeaf(false) as WorkspaceLeaf | null;
     if (!leaf) return;
     await leaf.setViewState({ type: previewViewType, active: true });
@@ -130,6 +161,39 @@ export default class RiebeckitePlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(previewViewType)) {
       await (leaf.view as RiebeckitePreviewView).refresh();
     }
+  }
+
+  private async refreshViews(): Promise<void> {
+    await this.refreshPreviews();
+    for (const type of [publicationViewType, diagnosticsViewType]) {
+      for (const leaf of this.app.workspace.getLeavesOfType(type)) {
+        await (
+          leaf.view as RiebeckitePublicationView | RiebeckiteDiagnosticsView
+        ).refresh();
+      }
+    }
+  }
+
+  private scheduleRefreshViews(): void {
+    if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = window.setTimeout(() => {
+      this.refreshTimer = undefined;
+      void this.refreshViews();
+    }, 150);
+  }
+
+  private async openPublication(): Promise<void> {
+    const leaf = this.app.workspace.getRightLeaf(false) as WorkspaceLeaf | null;
+    if (!leaf) return;
+    await leaf.setViewState({ type: publicationViewType, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  private async openDiagnostics(): Promise<void> {
+    const leaf = this.app.workspace.getRightLeaf(false) as WorkspaceLeaf | null;
+    if (!leaf) return;
+    await leaf.setViewState({ type: diagnosticsViewType, active: true });
+    this.app.workspace.revealLeaf(leaf);
   }
 
   private async openCurrentPreviewInBrowser(): Promise<void> {

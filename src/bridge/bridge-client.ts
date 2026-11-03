@@ -40,6 +40,40 @@ export type BridgePageResult =
   | { kind: "invalid-source" }
   | { kind: "error" };
 
+export type BridgePublication = {
+  source: string;
+  permalink: string;
+  locale: string | null;
+  visibility: "public" | "unlisted" | "draft" | "scheduled";
+  routable: boolean;
+  discoverable: boolean;
+  publishAt: string | null;
+  publicLocation: unknown;
+  canonicalUrl: string | null;
+  redirects: readonly BridgeRedirect[];
+  reasons: readonly string[];
+  revision: number;
+};
+
+export type BridgeRedirect = { from: string; to: string; status: number };
+
+export type BridgeDiagnostic = {
+  code: string;
+  severity: "error" | "warning" | "info";
+  message: string;
+  category: string;
+  source: { path: string; line?: number; column?: number } | undefined;
+  related: readonly { target: string }[];
+  fix: { kind: string; description: string } | undefined;
+};
+
+export type BridgeInspectionResult<T> =
+  | { kind: "resolved"; value: T; revision: number }
+  | { kind: "unavailable" }
+  | { kind: "not-found" }
+  | { kind: "unsupported" }
+  | { kind: "error" };
+
 export type BridgeRequest = (input: {
   url: string;
   method: string;
@@ -120,6 +154,75 @@ export class BridgeClient implements Disposable {
             page,
             previewUrl: new URL(page.page, serverUrl).toString(),
           }
+        : { kind: "error" };
+    } catch {
+      return { kind: "unavailable" };
+    }
+  }
+
+  getRevision(): number | undefined {
+    const state = this.state;
+    return state.kind === "connected"
+      ? state.status.development.revision
+      : undefined;
+  }
+
+  hasCapability(capability: string): boolean {
+    const state = this.state;
+    return (
+      state.kind === "connected" &&
+      state.status.capabilities.includes(capability)
+    );
+  }
+
+  inspectPublication(
+    token: string,
+    source: string,
+  ): Promise<BridgeInspectionResult<BridgePublication>> {
+    return this.inspect("publication", token, source, parsePublication);
+  }
+
+  inspectDiagnostics(
+    token: string,
+    source: string,
+  ): Promise<BridgeInspectionResult<readonly BridgeDiagnostic[]>> {
+    return this.inspect("diagnostics", token, source, parseDiagnostics);
+  }
+
+  private async inspect<T>(
+    capability: "publication" | "diagnostics",
+    token: string,
+    source: string,
+    parse: (value: Record<string, unknown>) => T | undefined,
+  ): Promise<BridgeInspectionResult<T>> {
+    const origin = this.privateOrigin;
+    if (this.disposed || !origin || !isContentPath(source))
+      return { kind: "unavailable" };
+    if (!this.hasCapability(capability)) return { kind: "unsupported" };
+    const generation = this.generation;
+    try {
+      const response = await this.requestWithTimeout({
+        url: `${origin}/__riebeckite/bridge/v1/${capability}?path=${encodeURIComponent(source)}`,
+        method: "GET",
+        headers: {
+          "x-riebeckite-bridge-token": token,
+          "x-riebeckite-bridge-protocol": "1",
+        },
+        throw: false,
+      });
+      if (this.disposed || generation !== this.generation)
+        return { kind: "unavailable" };
+      if (response.status !== 200 || !isRecord(response.json))
+        return { kind: "error" };
+      if (response.json.status === "unavailable")
+        return { kind: "unavailable" };
+      if (response.json.status === "not-found") return { kind: "not-found" };
+      if (response.json.status === "unsupported")
+        return { kind: "unsupported" };
+      const revision = response.json.revision;
+      const value = parse(response.json);
+      return value && typeof revision === "number" && Number.isInteger(revision)
+        ? { kind: "resolved", value, revision }
         : { kind: "error" };
     } catch {
       return { kind: "unavailable" };
@@ -261,6 +364,129 @@ function parsePage(value: Record<string, unknown>): BridgePage | undefined {
     return undefined;
   const { status: _, ...page } = value;
   return page as unknown as BridgePage;
+}
+
+function parsePublication(
+  value: Record<string, unknown>,
+): BridgePublication | undefined {
+  if (
+    value.status !== "resolved" ||
+    !isRecord(value.entry) ||
+    !isRecord(value.entry.source) ||
+    typeof value.entry.source.path !== "string" ||
+    typeof value.entry.permalink !== "string" ||
+    !(typeof value.entry.locale === "string" || value.entry.locale === null) ||
+    !isRecord(value.publication)
+  )
+    return undefined;
+  const publication = value.publication;
+  if (
+    !["public", "unlisted", "draft", "scheduled"].includes(
+      String(publication.visibility),
+    ) ||
+    typeof publication.routable !== "boolean" ||
+    typeof publication.discoverable !== "boolean" ||
+    !(
+      typeof publication.publishAt === "string" ||
+      publication.publishAt === null
+    ) ||
+    !Array.isArray(publication.redirects) ||
+    !publication.redirects.every(isRedirect) ||
+    !Array.isArray(publication.reasons) ||
+    !publication.reasons.every((reason) => typeof reason === "string")
+  )
+    return undefined;
+  if (
+    !(
+      typeof publication.canonicalUrl === "string" ||
+      publication.canonicalUrl == null
+    )
+  )
+    return undefined;
+  return {
+    source: value.entry.source.path,
+    permalink: value.entry.permalink,
+    locale: value.entry.locale,
+    visibility: publication.visibility as BridgePublication["visibility"],
+    routable: publication.routable,
+    discoverable: publication.discoverable,
+    publishAt: publication.publishAt,
+    publicLocation: publication.publicLocation,
+    canonicalUrl: publication.canonicalUrl ?? null,
+    redirects: publication.redirects,
+    reasons: publication.reasons,
+    revision: value.revision as number,
+  };
+}
+
+function parseDiagnostics(
+  value: Record<string, unknown>,
+): readonly BridgeDiagnostic[] | undefined {
+  if (value.status !== "resolved" || !Array.isArray(value.diagnostics))
+    return undefined;
+  const diagnostics = value.diagnostics.map(parseDiagnostic);
+  return diagnostics.every((diagnostic) => diagnostic !== undefined)
+    ? (diagnostics as BridgeDiagnostic[])
+    : undefined;
+}
+
+function parseDiagnostic(value: unknown): BridgeDiagnostic | undefined {
+  if (!isRecord(value)) return undefined;
+  const source = value.source;
+  if (
+    typeof value.code !== "string" ||
+    !["error", "warning", "info"].includes(String(value.severity)) ||
+    typeof value.message !== "string" ||
+    typeof value.category !== "string" ||
+    !(source === undefined || isDiagnosticSource(source)) ||
+    !(value.related === undefined || Array.isArray(value.related)) ||
+    !(value.related ?? []).every(
+      (related) => isRecord(related) && typeof related.target === "string",
+    )
+  )
+    return undefined;
+  if (
+    value.fix !== undefined &&
+    (!isRecord(value.fix) ||
+      typeof value.fix.kind !== "string" ||
+      typeof value.fix.description !== "string")
+  )
+    return undefined;
+  return {
+    code: value.code,
+    severity: value.severity as BridgeDiagnostic["severity"],
+    message: value.message,
+    category: value.category,
+    source: isRecord(source)
+      ? {
+          path: source.path as string,
+          ...(typeof source.line === "number" ? { line: source.line } : {}),
+          ...(typeof source.column === "number"
+            ? { column: source.column }
+            : {}),
+        }
+      : undefined,
+    related: (value.related ?? []) as BridgeDiagnostic["related"],
+    fix: value.fix as BridgeDiagnostic["fix"],
+  };
+}
+
+function isDiagnosticSource(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.path === "string" &&
+    (typeof value.line === "number" || value.line === undefined) &&
+    (typeof value.column === "number" || value.column === undefined)
+  );
+}
+
+function isRedirect(value: unknown): value is BridgeRedirect {
+  return (
+    isRecord(value) &&
+    typeof value.from === "string" &&
+    typeof value.to === "string" &&
+    Number.isInteger(value.status)
+  );
 }
 
 function isContentPath(value: string): boolean {
