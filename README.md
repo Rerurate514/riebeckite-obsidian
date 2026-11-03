@@ -8,10 +8,11 @@ reads Bridge data only; it does not publish notes or change vault data.
 
 ## Status
 
-Bridge Protocol v1 provides connection status, resolved page status, and a Live
-Preview side pane. The pane displays the actual local HonoX development page;
-Obsidian does not render Markdown itself. Publication changes and diagnostics
-remain unavailable.
+Bridge Protocol v1 provides connection status, resolved page status, a Live
+Preview side pane, Publication Manager, and Document Diagnostics. The preview
+pane displays the actual local HonoX development page; Obsidian does not render
+Markdown itself. This plugin is read-only: publication changes and quick fixes
+remain unavailable pending the Safe Mutation API.
 
 ## Connect to Riebeckite
 
@@ -21,6 +22,12 @@ remain unavailable.
 3. Select **Connect**, or run **Riebeckite: Connect to Riebeckite**.
 4. Run **Riebeckite: Open Live Preview**. It follows the active Markdown note;
    use Refresh or Open Current Preview in Browser when needed.
+5. Run **Riebeckite: Open Publication Manager** to inspect the active note, or
+   choose **Refresh vault** to explicitly scan Markdown notes. Filtering and
+   search operate on that local result set and do not issue requests per key.
+6. Run **Riebeckite: Open Document Diagnostics** to inspect the active note.
+   `No issues` is shown only after a successful empty response; unavailable
+   server data is shown separately.
 
 Only `localhost`, `127.0.0.0/8`, and `::1` URLs are accepted. The Bridge is
 disabled unless its token is supplied, binds to loopback only, and accepts no
@@ -77,6 +84,27 @@ pnpm build:release
    public URL (when `site.baseUrl` is configured) appear.
 5. Select **Disconnect**, then disable and re-enable the plugin, and confirm the
    commands appear only once.
+6. On a server advertising `publication` and `diagnostics`, open both views and
+   confirm Public, Draft, Scheduled, and Unlisted data agrees with Riebeckite.
+   Confirm a non-routable note has no development-preview action, filters and
+   search do not trigger new requests, and a diagnostic opens only a vault file.
+
+## Bridge capabilities and limits
+
+Publication Manager requires the optional `publication` capability and
+Diagnostics View requires `diagnostics`. Older v1 servers remain compatible:
+the corresponding pane reports that the server does not support it. The
+implementation uses the server's `visibility`, routing, discovery, public
+location, reasons, and revision directly; it never derives a URL from a file
+name.
+
+The server currently provides optional line and column fields without a
+documented indexing convention. Diagnostics therefore open the verified vault
+file but do not move the cursor or decorate the editor. This avoids incorrect
+locations for Unicode text and stale revisions. Editor decorations, cursor
+navigation, SSE updates, and Safe Mutation operations are **UNVERIFIED / not
+implemented** until the Bridge contract defines stable ranges and revision
+semantics. Use Refresh after a site rebuild or reconnect.
 
 ## Release
 

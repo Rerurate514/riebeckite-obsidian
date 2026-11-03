@@ -160,6 +160,101 @@ test("does not let a disconnected request overwrite current state", async () => 
   assert.equal(client.getState().kind, "disconnected");
 });
 
+test("reads publication data only when the server advertises its capability", async () => {
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1"))
+      return response({ ...connectedStatus, capabilities: ["publication"] });
+    return response({
+      status: "resolved",
+      entry: {
+        source: { path: "notes/hello.md" },
+        permalink: "/hello/",
+        locale: "ja",
+      },
+      publication: {
+        visibility: "scheduled",
+        routable: false,
+        discoverable: false,
+        publishAt: "2026-11-05T00:00:00.000Z",
+        publicLocation: { permalink: "/hello/" },
+        redirects: [],
+        reasons: ["publishAt is after the build time"],
+      },
+      revision: 2,
+    });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const result = await client.inspectPublication(
+    "a".repeat(32),
+    "notes/hello.md",
+  );
+
+  assert.deepEqual(result, {
+    kind: "resolved",
+    revision: 2,
+    value: {
+      source: "notes/hello.md",
+      permalink: "/hello/",
+      locale: "ja",
+      visibility: "scheduled",
+      routable: false,
+      discoverable: false,
+      publishAt: "2026-11-05T00:00:00.000Z",
+      publicLocation: { permalink: "/hello/" },
+      canonicalUrl: null,
+      redirects: [],
+      reasons: ["publishAt is after the build time"],
+      revision: 2,
+    },
+  });
+});
+
+test("keeps no-source diagnostics readable when optional fields are omitted", async () => {
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1"))
+      return response({ ...connectedStatus, capabilities: ["diagnostics"] });
+    return response({
+      status: "resolved",
+      diagnostics: [
+        {
+          code: "orphan-note",
+          severity: "info",
+          message: "Not linked",
+          category: "content",
+        },
+      ],
+      revision: 3,
+    });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const result = await client.inspectDiagnostics(
+    "a".repeat(32),
+    "notes/hello.md",
+  );
+
+  assert.deepEqual(result, {
+    kind: "resolved",
+    revision: 3,
+    value: [
+      {
+        code: "orphan-note",
+        severity: "info",
+        message: "Not linked",
+        category: "content",
+        source: undefined,
+        related: [],
+        fix: undefined,
+      },
+    ],
+  });
+});
+
 function response(json: unknown, status = 200) {
   return { status, json } as Awaited<ReturnType<BridgeRequest>>;
 }

@@ -8,9 +8,10 @@ English: [README.md](./README.md)
 
 ## 開発状況
 
-Bridge Protocol v1による状態取得、解決済みページ状態、Live Previewサイドペインを実装済みです。
-Previewは実際のローカルHonoX開発ページを表示し、Obsidian側でMarkdownを変換しません。公開状態の
-変更とDiagnosticsは意図的に未実装です。
+Bridge Protocol v1による状態取得、解決済みページ状態、Live Previewサイドペイン、Publication
+Manager、Document Diagnosticsを実装済みです。Previewは実際のローカルHonoX開発ページを表示し、
+Obsidian側でMarkdownを変換しません。このプラグインは読み取り専用です。公開状態の変更とQuick Fixは
+Safe Mutation APIの確定待ちです。
 
 ## Riebeckiteへの接続
 
@@ -20,6 +21,11 @@ Previewは実際のローカルHonoX開発ページを表示し、Obsidian側で
 3. **Connect** を選ぶか、**Riebeckite: Connect to Riebeckite** を実行します。
 4. **Riebeckite: Open Live Preview** を実行します。アクティブなMarkdownノートに追従し、必要に
    応じてRefreshまたはOpen Current Preview in Browserを使います。
+5. **Riebeckite: Open Publication Manager** を実行するとアクティブノートを確認できます。Vault全体を
+   取得する場合だけ **Refresh vault** を選びます。フィルタと検索は取得済みのローカル結果だけを対象とし、
+   キー入力ごとにBridgeへ問い合わせません。
+6. **Riebeckite: Open Document Diagnostics** を実行するとアクティブノートの診断を確認できます。
+   成功した空配列だけを「問題なし」と表示し、サーバーから取得できない状態とは区別します。
 
 `localhost`、`127.0.0.0/8`、`::1` 以外のURLは受け付けません。Bridgeはトークン指定時だけ
 有効になり、loopbackだけで待ち受けます。Cross-Originおよび転送ヘッダー付きのリクエストは
@@ -73,6 +79,22 @@ pnpm build:release
 4. **Connect** を選びMarkdownノートを開いてから、**Riebeckite: Open Live Preview** を実行します。
    実際の開発ページ、Preview URL、公開状態、`site.baseUrl`設定時の公開URLが表示されることを確認します。
 5. **Disconnect** を選んだ後にプラグインを無効化・再有効化し、コマンドが重複登録されないことを確認します。
+6. `publication` と `diagnostics` capabilityを通知するサーバーでは両Viewを開き、Public、Draft、
+   Scheduled、Unlistedの値がRiebeckiteと一致することを確認します。非routableノートには開発プレビューを
+   開く操作がないこと、フィルタ・検索で追加通信しないこと、診断がVault内のファイルだけを開くことも確認します。
+
+## Bridge capabilityと制約
+
+Publication Managerには任意capabilityの`publication`、Diagnostics Viewには`diagnostics`が必要です。
+これらを通知しない旧Bridge v1とも互換であり、該当Viewにはサーバー側未対応と表示します。公開状態は
+サーバーの`visibility`、routing、discovery、public location、理由、revisionをそのまま使用し、
+ファイル名からURLを推測しません。
+
+サーバーのline / columnは任意ですが、現時点では基点の規約が文書化されていません。そのため診断では
+Vault内と確認できたファイルだけを開き、カーソル移動とエディタ内Decorationは行いません。Unicode文字列や
+古いrevisionに対して誤った位置を示さないためです。Editor Decoration、カーソル移動、SSE更新、
+Safe Mutation操作は、安定したRangeとrevisionの契約が確定するまで **UNVERIFIED / 未実装** です。
+サイトを再ビルドまたは再接続した後はRefreshを使用してください。
 
 ## リリース
 
