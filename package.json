@@ -25,11 +25,11 @@
     "sync:version": "node scripts/sync-version.mjs"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.16",
-    "@types/node": "^24.5.2",
-    "esbuild": "^0.28.2",
+    "@biomejs/biome": "2.4.16",
+    "@types/node": "24.13.6",
+    "esbuild": "0.28.2",
     "obsidian": "latest",
-    "tsx": "^4.22.4",
-    "typescript": "^5.0.0"
+    "tsx": "4.22.4",
+    "typescript": "5.9.3"
   }
 }
