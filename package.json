@@ -1,0 +1,35 @@
+{
+  "name": "riebeckite-obsidian",
+  "version": "0.1.0",
+  "description": "Riebeckite integration for Obsidian.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.3",
+  "engines": {
+    "node": ">=24.22.0 <25",
+    "pnpm": "11.5.3"
+  },
+  "scripts": {
+    "dev": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs production && node scripts/check-manifest.mjs",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts",
+    "check:manifest": "node scripts/check-manifest.mjs",
+    "test:release": "node scripts/build.mjs production && node scripts/check-manifest.mjs && node scripts/verify-release.mjs",
+    "build:release": "node scripts/build.mjs production && node scripts/check-manifest.mjs && node scripts/verify-release.mjs",
+    "version": "node scripts/sync-version.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.16",
+    "@types/node": "^24.5.2",
+    "esbuild": "^0.28.2",
+    "obsidian": "latest",
+    "tsx": "^4.22.4",
+    "typescript": "^5.0.0"
+  }
+}
