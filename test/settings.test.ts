@@ -8,10 +8,15 @@ test("returns defaults for missing or malformed settings", () => {
     parseSettings({ serverUrl: "file:///vault" }),
     defaultSettings,
   );
+  assert.deepEqual(
+    parseSettings({ serverUrl: "https://example.com", bridgeToken: "secret" }),
+    defaultSettings,
+  );
 });
 
 test("accepts and normalizes a local server URL", () => {
   assert.deepEqual(parseSettings({ serverUrl: "http://127.0.0.1:3000/" }), {
+    bridgeToken: "",
     serverUrl: "http://127.0.0.1:3000",
   });
 });

@@ -1,16 +1,30 @@
 # Obsidian向け Riebeckite
 
-Riebeckiteは、将来の[Riebeckite](https://github.com/Rerurate514/riebeckite)との
-ローカル連携に向けたObsidian Community Pluginの基盤です。現時点では設定タブと
-**Open settings** コマンドを登録します。サーバーへの接続、ノートの公開、Vaultデータの
-変更は行いません。
+Riebeckiteは、ローカルの[Riebeckite](https://github.com/Rerurate514/riebeckite)
+開発サーバーへObsidianを接続します。Bridgeを読み取るだけで、ノートの公開や
+Vaultデータの変更は行いません。
 
 English: [README.md](./README.md)
 
 ## 開発状況
 
-プラグインの初期基盤は実装済みです。ローカルサーバー通信とRiebeckiteの各機能は、意図的に
-未実装です。
+Bridge Protocol v1による状態取得、解決済みページ状態、Live Previewサイドペインを実装済みです。
+Previewは実際のローカルHonoX開発ページを表示し、Obsidian側でMarkdownを変換しません。公開状態の
+変更とDiagnosticsは意図的に未実装です。
+
+## Riebeckiteへの接続
+
+1. 32文字以上の一意なペアリングトークンを指定してサイトを起動します。
+   `riebeckite dev --bridge-token <token>`
+2. **Riebeckite** の設定でローカルサーバーURLと同じトークンを入力します。
+3. **Connect** を選ぶか、**Riebeckite: Connect to Riebeckite** を実行します。
+4. **Riebeckite: Open Live Preview** を実行します。アクティブなMarkdownノートに追従し、必要に
+   応じてRefreshまたはOpen Current Preview in Browserを使います。
+
+`localhost`、`127.0.0.0/8`、`::1` 以外のURLは受け付けません。Bridgeはトークン指定時だけ
+有効になり、loopbackだけで待ち受けます。Cross-Originおよび転送ヘッダー付きのリクエストは
+受け付けません。ペアリングが拒否される場合は、トークンの不一致か、サーバーを
+`--bridge-token` 付きで起動していないことを確認してください。
 
 ## 手動インストール
 
@@ -54,9 +68,11 @@ pnpm build:release
 
 1. 上記の手順でテスト用Vaultへビルド成果物を導入します。
 2. プラグインを有効化し、**Riebeckite: Open settings** を実行して設定タブが開くことを確認します。
-3. **Local server URL** を変更し、設定タブを開き直して値が保存されることを確認します。
-4. ローカル連携が未接続である旨が表示されることを確認します。
-5. プラグインを無効化・再有効化し、コマンドが重複登録されないことを確認します。
+3. **Riebeckite Server URL** と **Bridge pairing token** を入力し、設定タブを開き直して
+   両方の値が保存されることを確認します。
+4. **Connect** を選びMarkdownノートを開いてから、**Riebeckite: Open Live Preview** を実行します。
+   実際の開発ページ、Preview URL、公開状態、`site.baseUrl`設定時の公開URLが表示されることを確認します。
+5. **Disconnect** を選んだ後にプラグインを無効化・再有効化し、コマンドが重複登録されないことを確認します。
 
 ## リリース
 

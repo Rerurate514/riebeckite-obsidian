@@ -1,16 +1,31 @@
 # Riebeckite for Obsidian
 
-Riebeckite is an Obsidian Community Plugin foundation for a future local
-connection to [Riebeckite](https://github.com/Rerurate514/riebeckite). It
-currently registers a settings tab and an **Open settings** command. It does
-not connect to a server, publish notes, or change vault data.
+Riebeckite connects Obsidian to a local
+[Riebeckite](https://github.com/Rerurate514/riebeckite) development server. It
+reads Bridge data only; it does not publish notes or change vault data.
 
 日本語版: [README_ja.md](./README_ja.md)
 
 ## Status
 
-The plugin foundation is implemented. Local server communication and every
-Riebeckite feature are intentionally unimplemented.
+Bridge Protocol v1 provides connection status, resolved page status, and a Live
+Preview side pane. The pane displays the actual local HonoX development page;
+Obsidian does not render Markdown itself. Publication changes and diagnostics
+remain unavailable.
+
+## Connect to Riebeckite
+
+1. Start the site with an explicit, unique pairing token (at least 32 characters):
+   `riebeckite dev --bridge-token <token>`.
+2. In **Riebeckite** settings, enter the local server URL and the same token.
+3. Select **Connect**, or run **Riebeckite: Connect to Riebeckite**.
+4. Run **Riebeckite: Open Live Preview**. It follows the active Markdown note;
+   use Refresh or Open Current Preview in Browser when needed.
+
+Only `localhost`, `127.0.0.0/8`, and `::1` URLs are accepted. The Bridge is
+disabled unless its token is supplied, binds to loopback only, and accepts no
+cross-origin or forwarded requests. A rejected pairing usually means the token
+is wrong or the server was not started with `--bridge-token`.
 
 ## Install manually
 
@@ -55,10 +70,13 @@ pnpm build:release
 1. Install the build into a test vault as described above.
 2. Enable the plugin, run **Riebeckite: Open settings**, and confirm its tab
    opens.
-3. Change **Local server URL**, reopen the settings tab, and confirm the value
-   persists.
-4. Confirm the notice says the local integration is not connected.
-5. Disable the plugin, re-enable it, and confirm the command appears only once.
+3. Set **Riebeckite Server URL** and **Bridge pairing token**, reopen the settings
+   tab, and confirm both values persist.
+4. Select **Connect**, open a Markdown note, then run **Riebeckite: Open Live
+   Preview**. Confirm the actual development page, preview URL, visibility, and
+   public URL (when `site.baseUrl` is configured) appear.
+5. Select **Disconnect**, then disable and re-enable the plugin, and confirm the
+   commands appear only once.
 
 ## Release
 
