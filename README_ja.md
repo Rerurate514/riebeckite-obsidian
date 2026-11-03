@@ -61,7 +61,7 @@ pnpm build:release
 ## リリース
 
 1. `package.json` をリリース対象のセマンティックバージョンに更新します。
-2. `pnpm version` を実行し、`package.json`、`manifest.json`、`versions.json` を同じコミットに含めます。
+2. `pnpm sync:version` を実行し、`package.json`、`manifest.json`、`versions.json` を同じコミットに含めます。
 3. `pnpm build:release` を実行します。
 4. 対応する `v<version>` タグを作成してpushします。Releaseワークフローはタグを検証した後、
    `main.js` と `manifest.json` をGitHub Releaseに配置します。

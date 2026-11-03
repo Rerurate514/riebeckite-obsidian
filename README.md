@@ -63,7 +63,7 @@ pnpm build:release
 ## Release
 
 1. Update `package.json` to the intended semantic version.
-2. Run `pnpm version`, then commit `package.json`, `manifest.json`, and
+2. Run `pnpm sync:version`, then commit `package.json`, `manifest.json`, and
    `versions.json` together.
 3. Run `pnpm build:release`.
 4. Create and push the matching `v<version>` tag. The release workflow verifies

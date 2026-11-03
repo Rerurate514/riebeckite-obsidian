@@ -11,7 +11,7 @@ before proposing a public contract or a connection feature.
 - Validate persisted data at load boundaries. Do not silently change vault data.
 - Follow the repository's Biome configuration and strict TypeScript settings.
 - Keep `package.json`, `manifest.json`, and `versions.json` aligned through
-  `pnpm version` when changing a release version.
+  `pnpm sync:version` when changing a release version.
 
 ## Tests
 
