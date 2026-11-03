@@ -2,14 +2,16 @@
 
 Riebeckite connects Obsidian to a local
 [Riebeckite](https://github.com/Rerurate514/riebeckite) development server. It
-only reads Bridge status; it does not publish notes or change vault data.
+reads Bridge data only; it does not publish notes or change vault data.
 
 日本語版: [README_ja.md](./README_ja.md)
 
 ## Status
 
-Bridge Protocol v1 is implemented for status inspection. Diagnostics, content
-inspection, preview, and publication inspection are intentionally unavailable.
+Bridge Protocol v1 provides connection status, resolved page status, and a Live
+Preview side pane. The pane displays the actual local HonoX development page;
+Obsidian does not render Markdown itself. Publication changes and diagnostics
+remain unavailable.
 
 ## Connect to Riebeckite
 
@@ -17,6 +19,8 @@ inspection, preview, and publication inspection are intentionally unavailable.
    `riebeckite dev --bridge-token <token>`.
 2. In **Riebeckite** settings, enter the local server URL and the same token.
 3. Select **Connect**, or run **Riebeckite: Connect to Riebeckite**.
+4. Run **Riebeckite: Open Live Preview**. It follows the active Markdown note;
+   use Refresh or Open Current Preview in Browser when needed.
 
 Only `localhost`, `127.0.0.0/8`, and `::1` URLs are accepted. The Bridge is
 disabled unless its token is supplied, binds to loopback only, and accepts no
@@ -68,8 +72,9 @@ pnpm build:release
    opens.
 3. Set **Riebeckite Server URL** and **Bridge pairing token**, reopen the settings
    tab, and confirm both values persist.
-4. Select **Connect** and confirm the status shows the Riebeckite and protocol
-   versions plus `status` capability.
+4. Select **Connect**, open a Markdown note, then run **Riebeckite: Open Live
+   Preview**. Confirm the actual development page, preview URL, visibility, and
+   public URL (when `site.baseUrl` is configured) appear.
 5. Select **Disconnect**, then disable and re-enable the plugin, and confirm the
    commands appear only once.
 

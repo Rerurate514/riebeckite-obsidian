@@ -101,6 +101,65 @@ test("times out and stays disconnected after disposal", async () => {
   assert.equal(client.getState().kind, "disconnected");
 });
 
+test("resolves pages from the authenticated private origin", async () => {
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1")) return response(connectedStatus);
+    return response({
+      status: "resolved",
+      source: "notes/hello.md",
+      page: "/custom/hello/",
+      visibility: "unlisted",
+      routable: true,
+      discoverable: false,
+      locale: "ja",
+      publishAt: null,
+      revision: 1,
+      productionUrl: "https://example.com/custom/hello/",
+    });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const result = await client.resolvePage(
+    "http://127.0.0.1:3000",
+    "a".repeat(32),
+    "notes/hello.md",
+  );
+
+  assert.deepEqual(result, {
+    kind: "resolved",
+    previewUrl: "http://127.0.0.1:3000/custom/hello/",
+    page: {
+      source: "notes/hello.md",
+      page: "/custom/hello/",
+      visibility: "unlisted",
+      routable: true,
+      discoverable: false,
+      locale: "ja",
+      publishAt: null,
+      revision: 1,
+      productionUrl: "https://example.com/custom/hello/",
+    },
+  });
+});
+
+test("does not let a disconnected request overwrite current state", async () => {
+  let resolveRequest: (() => void) | undefined;
+  const client = new BridgeClient(
+    () =>
+      new Promise((resolve) => {
+        resolveRequest = () =>
+          resolve(response({ origin: "http://127.0.0.1:4567" }));
+      }),
+  );
+  const connecting = client.connect("http://127.0.0.1:3000", "a".repeat(32));
+  client.disconnect();
+  resolveRequest?.();
+  await connecting;
+  assert.equal(client.getState().kind, "disconnected");
+});
+
 function response(json: unknown, status = 200) {
   return { status, json } as Awaited<ReturnType<BridgeRequest>>;
 }

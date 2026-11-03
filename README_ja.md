@@ -1,15 +1,16 @@
 # Obsidian向け Riebeckite
 
 Riebeckiteは、ローカルの[Riebeckite](https://github.com/Rerurate514/riebeckite)
-開発サーバーへObsidianを接続します。Bridgeの状態を読み取るだけで、ノートの公開や
+開発サーバーへObsidianを接続します。Bridgeを読み取るだけで、ノートの公開や
 Vaultデータの変更は行いません。
 
 English: [README.md](./README.md)
 
 ## 開発状況
 
-Bridge Protocol v1による状態取得を実装済みです。Diagnostics、コンテンツ検査、Preview、
-公開状態の検査は意図的に未実装です。
+Bridge Protocol v1による状態取得、解決済みページ状態、Live Previewサイドペインを実装済みです。
+Previewは実際のローカルHonoX開発ページを表示し、Obsidian側でMarkdownを変換しません。公開状態の
+変更とDiagnosticsは意図的に未実装です。
 
 ## Riebeckiteへの接続
 
@@ -17,6 +18,8 @@ Bridge Protocol v1による状態取得を実装済みです。Diagnostics、コ
    `riebeckite dev --bridge-token <token>`
 2. **Riebeckite** の設定でローカルサーバーURLと同じトークンを入力します。
 3. **Connect** を選ぶか、**Riebeckite: Connect to Riebeckite** を実行します。
+4. **Riebeckite: Open Live Preview** を実行します。アクティブなMarkdownノートに追従し、必要に
+   応じてRefreshまたはOpen Current Preview in Browserを使います。
 
 `localhost`、`127.0.0.0/8`、`::1` 以外のURLは受け付けません。Bridgeはトークン指定時だけ
 有効になり、loopbackだけで待ち受けます。Cross-Originおよび転送ヘッダー付きのリクエストは
@@ -67,8 +70,8 @@ pnpm build:release
 2. プラグインを有効化し、**Riebeckite: Open settings** を実行して設定タブが開くことを確認します。
 3. **Riebeckite Server URL** と **Bridge pairing token** を入力し、設定タブを開き直して
    両方の値が保存されることを確認します。
-4. **Connect** を選び、RiebeckiteとProtocolのバージョン、および `status` capabilityが
-   接続状態に表示されることを確認します。
+4. **Connect** を選びMarkdownノートを開いてから、**Riebeckite: Open Live Preview** を実行します。
+   実際の開発ページ、Preview URL、公開状態、`site.baseUrl`設定時の公開URLが表示されることを確認します。
 5. **Disconnect** を選んだ後にプラグインを無効化・再有効化し、コマンドが重複登録されないことを確認します。
 
 ## リリース

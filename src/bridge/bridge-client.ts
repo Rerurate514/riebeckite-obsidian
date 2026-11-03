@@ -21,6 +21,25 @@ export type BridgeStatus = {
   inspection: { available: boolean };
 };
 
+export type BridgePage = {
+  source: string;
+  page: string;
+  visibility: "public" | "unlisted" | "draft" | "scheduled";
+  routable: boolean;
+  discoverable: boolean;
+  locale: string | null;
+  publishAt: string | null;
+  revision: number;
+  productionUrl: string | null;
+};
+
+export type BridgePageResult =
+  | { kind: "resolved"; page: BridgePage; previewUrl: string }
+  | { kind: "unavailable" }
+  | { kind: "not-found" }
+  | { kind: "invalid-source" }
+  | { kind: "error" };
+
 export type BridgeRequest = (input: {
   url: string;
   method: string;
@@ -32,6 +51,8 @@ export class BridgeClient implements Disposable {
   private state: BridgeConnectionState = { kind: "disconnected" };
   private connection: Promise<BridgeConnectionState> | undefined;
   private disposed = false;
+  private generation = 0;
+  private privateOrigin: string | undefined;
 
   constructor(
     private readonly request: BridgeRequest,
@@ -53,6 +74,8 @@ export class BridgeClient implements Disposable {
   }
 
   disconnect(): void {
+    this.generation += 1;
+    this.privateOrigin = undefined;
     this.state = { kind: "disconnected" };
   }
 
@@ -61,10 +84,53 @@ export class BridgeClient implements Disposable {
     this.disconnect();
   }
 
+  async resolvePage(
+    serverUrl: string,
+    token: string,
+    source: string,
+  ): Promise<BridgePageResult> {
+    const origin = this.privateOrigin;
+    if (this.disposed || !origin || !isContentPath(source)) {
+      return { kind: "unavailable" };
+    }
+    const generation = this.generation;
+    try {
+      const response = await this.requestWithTimeout({
+        url: `${origin}/__riebeckite/bridge/v1/page?source=${encodeURIComponent(source)}`,
+        method: "GET",
+        headers: {
+          "x-riebeckite-bridge-token": token,
+          "x-riebeckite-bridge-protocol": "1",
+        },
+        throw: false,
+      });
+      if (this.disposed || generation !== this.generation)
+        return { kind: "unavailable" };
+      if (response.status !== 200 || !isRecord(response.json))
+        return { kind: "error" };
+      if (response.json.status === "unavailable")
+        return { kind: "unavailable" };
+      if (response.json.status === "not-found") return { kind: "not-found" };
+      if (response.json.status === "invalid-source")
+        return { kind: "invalid-source" };
+      const page = parsePage(response.json);
+      return page
+        ? {
+            kind: "resolved",
+            page,
+            previewUrl: new URL(page.page, serverUrl).toString(),
+          }
+        : { kind: "error" };
+    } catch {
+      return { kind: "unavailable" };
+    }
+  }
+
   private async connectOnce(
     serverUrl: string,
     token: string,
   ): Promise<BridgeConnectionState> {
+    const generation = this.generation;
     if (token.length < 32) {
       return this.setState({
         kind: "unauthorized",
@@ -78,6 +144,7 @@ export class BridgeClient implements Disposable {
         headers: { "x-riebeckite-bridge-token": token },
         throw: false,
       });
+      if (this.disposed || generation !== this.generation) return this.state;
       if (bootstrap.status === 403) {
         return this.setState({
           kind: "unauthorized",
@@ -106,6 +173,7 @@ export class BridgeClient implements Disposable {
         },
         throw: false,
       });
+      if (this.disposed || generation !== this.generation) return this.state;
       if (response.status === 403) {
         return this.setState({
           kind: "unauthorized",
@@ -125,13 +193,14 @@ export class BridgeClient implements Disposable {
         });
       }
       const status = parseStatus(response.json);
-      return status
-        ? this.setState({ kind: "connected", status })
+      return status && !this.disposed && generation === this.generation
+        ? this.setConnected(origin, status)
         : this.setState({
             kind: "error",
             message: "Bridge returned an invalid response.",
           });
     } catch {
+      if (this.disposed || generation !== this.generation) return this.state;
       return this.setState({
         kind: "unavailable",
         message: "Could not reach the Bridge.",
@@ -142,6 +211,14 @@ export class BridgeClient implements Disposable {
   private setState(state: BridgeConnectionState): BridgeConnectionState {
     if (!this.disposed) this.state = state;
     return this.state;
+  }
+
+  private setConnected(
+    origin: string,
+    status: BridgeStatus,
+  ): BridgeConnectionState {
+    this.privateOrigin = origin;
+    return this.setState({ kind: "connected", status });
   }
 
   private async requestWithTimeout(
@@ -162,6 +239,37 @@ export class BridgeClient implements Disposable {
       if (timeout) clearTimeout(timeout);
     }
   }
+}
+
+function parsePage(value: Record<string, unknown>): BridgePage | undefined {
+  if (
+    value.status !== "resolved" ||
+    typeof value.source !== "string" ||
+    typeof value.page !== "string" ||
+    !["public", "unlisted", "draft", "scheduled"].includes(
+      String(value.visibility),
+    ) ||
+    typeof value.routable !== "boolean" ||
+    typeof value.discoverable !== "boolean" ||
+    !(typeof value.locale === "string" || value.locale === null) ||
+    !(typeof value.publishAt === "string" || value.publishAt === null) ||
+    !(
+      typeof value.productionUrl === "string" || value.productionUrl === null
+    ) ||
+    !Number.isInteger(value.revision)
+  )
+    return undefined;
+  const { status: _, ...page } = value;
+  return page as unknown as BridgePage;
+}
+
+function isContentPath(value: string): boolean {
+  return !(
+    value.startsWith("/") ||
+    value.startsWith("\\") ||
+    /^[a-zA-Z]:[\\/]/.test(value) ||
+    value.split(/[\\/]+/).some((part) => part === ".." || part === "")
+  );
 }
 
 function parseBootstrap(value: unknown): string | undefined {
