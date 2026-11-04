@@ -197,7 +197,12 @@ export class RiebeckitePublicationView extends ItemView {
       ["Canonical URL", publication.canonicalUrl ?? "not supplied"],
       ["Revision", String(publication.revision)],
       ["Reasons", publication.reasons.join("; ")],
-      ["Diagnostics", this.diagnosticSummaries.get(row.path) ?? "not loaded"],
+      [
+        "Diagnostics",
+        this.diagnosticSummaries.get(
+          this.plugin.bridgeSource(row.path) ?? "",
+        ) ?? "not loaded",
+      ],
       ["SEO", seoStatus(publication)],
     ]) {
       details.createEl("p", { text: `${label}: ${value}` });
@@ -269,6 +274,10 @@ export class RiebeckitePublicationView extends ItemView {
       if (current.plan.warnings.length)
         section.createEl("pre", {
           text: JSON.stringify(current.plan.warnings, null, 2),
+        });
+      if (current.plan.changes.length)
+        section.createEl("pre", {
+          text: JSON.stringify(current.plan.changes, null, 2),
         });
       section.createEl("button", { text: "Apply approved plan" }).onclick =
         () => void this.applyMutation(current.plan.id);
@@ -363,9 +372,9 @@ export class RiebeckitePublicationView extends ItemView {
 
   private async openDevelopmentPreview(path: string): Promise<void> {
     const result = await this.plugin.bridge.resolvePage(
-      this.plugin.settings.serverUrl,
-      this.plugin.settings.bridgeToken,
-      path,
+      this.plugin.serverUrl(),
+      this.plugin.bridgeToken(),
+      this.plugin.bridgeSource(path) ?? path,
     );
     if (result.kind === "resolved" && result.page.routable)
       window.open(result.previewUrl, "_blank", "noopener");

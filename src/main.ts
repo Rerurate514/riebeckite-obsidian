@@ -25,6 +25,7 @@ import {
 import {
   activeProfile,
   defaultSettings,
+  mapContentPath,
   mapVaultPath,
   parseSettings,
   type RiebeckiteSettings,
@@ -46,6 +47,8 @@ export default class RiebeckitePlugin extends Plugin {
   );
   private refreshTimer: number | undefined;
   private reconnect = false;
+  private retryDelayMs = 5_000;
+  private nextReconnectAt = 0;
   private readonly diagnostics = new Map<string, readonly BridgeDiagnostic[]>();
 
   async onload(): Promise<void> {
@@ -146,23 +149,34 @@ export default class RiebeckitePlugin extends Plugin {
 
   async updateSettings(settings: Partial<RiebeckiteSettings>): Promise<void> {
     const current = activeProfile(this.settings);
-    const profiles = current
-      ? this.settings.profiles.map((profile) =>
-          profile.id === current.id
-            ? {
-                ...profile,
-                ...(typeof settings.serverUrl === "string"
-                  ? { serverUrl: settings.serverUrl }
-                  : {}),
-                ...(typeof settings.bridgeToken === "string"
-                  ? { bridgeToken: settings.bridgeToken }
-                  : {}),
-              }
-            : profile,
-        )
-      : this.settings.profiles;
+    const profiles =
+      settings.profiles ??
+      (current
+        ? this.settings.profiles.map((profile) =>
+            profile.id === current.id
+              ? {
+                  ...profile,
+                  ...(typeof settings.serverUrl === "string"
+                    ? { serverUrl: settings.serverUrl }
+                    : {}),
+                  ...(typeof settings.bridgeToken === "string"
+                    ? { bridgeToken: settings.bridgeToken }
+                    : {}),
+                }
+              : profile,
+          )
+        : this.settings.profiles);
     this.settings = parseSettings({ ...this.settings, ...settings, profiles });
     await this.saveData(this.settings);
+  }
+
+  async switchProfile(id: string): Promise<void> {
+    await this.updateSettings({ activeProfileId: id });
+    this.bridge.disconnect();
+    this.reconnect = false;
+    this.retryDelayMs = 5_000;
+    this.nextReconnectAt = 0;
+    await this.refreshViews();
   }
 
   async connectBridge(silent = false): Promise<BridgeConnectionState> {
@@ -173,6 +187,8 @@ export default class RiebeckitePlugin extends Plugin {
     );
     if (state.kind === "connected") {
       this.reconnect = true;
+      this.retryDelayMs = 5_000;
+      this.nextReconnectAt = 0;
       await this.refreshViews();
     }
     if (state.kind === "connected") {
@@ -206,12 +222,27 @@ export default class RiebeckitePlugin extends Plugin {
     return mapVaultPath(activeProfile(this.settings), path);
   }
 
+  vaultPath(path: string): string | undefined {
+    return mapContentPath(activeProfile(this.settings), path);
+  }
+
+  serverUrl(): string {
+    return activeProfile(this.settings)?.serverUrl ?? this.settings.serverUrl;
+  }
+
+  bridgeToken(): string {
+    return (
+      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken
+    );
+  }
+
   setDiagnostics(path: string, diagnostics: readonly BridgeDiagnostic[]): void {
     this.diagnostics.set(path, diagnostics);
   }
 
   private async refreshBridgeStatus(): Promise<void> {
     if (!this.reconnect) return;
+    if (Date.now() < this.nextReconnectAt) return;
     const profile = activeProfile(this.settings);
     const token = profile?.bridgeToken ?? this.settings.bridgeToken;
     const previousRevision = this.bridge.getRevision();
@@ -219,11 +250,19 @@ export default class RiebeckitePlugin extends Plugin {
       this.bridge.getState().kind === "connected"
         ? await this.bridge.refreshStatus(token)
         : await this.connectBridge(true);
-    if (
-      state.kind === "connected" &&
-      state.status.development.revision !== previousRevision
-    )
-      await this.refreshViews();
+    if (state.kind === "connected") {
+      this.retryDelayMs = 5_000;
+      this.nextReconnectAt = 0;
+      if (state.status.development.revision !== previousRevision)
+        await this.refreshViews();
+      return;
+    }
+    if (state.kind === "unauthorized") {
+      this.reconnect = false;
+      return;
+    }
+    this.nextReconnectAt = Date.now() + this.retryDelayMs;
+    this.retryDelayMs = Math.min(this.retryDelayMs * 2, 60_000);
   }
 
   private openSettings(): void {
@@ -289,8 +328,8 @@ export default class RiebeckitePlugin extends Plugin {
       return;
     }
     const result = await this.bridge.resolvePage(
-      activeProfile(this.settings)?.serverUrl ?? this.settings.serverUrl,
-      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
+      this.serverUrl(),
+      this.bridgeToken(),
       source,
     );
     if (result.kind === "resolved" && result.page.routable) {

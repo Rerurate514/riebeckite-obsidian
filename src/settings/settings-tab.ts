@@ -31,8 +31,7 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
           dropdown.addOption(candidate.id, candidate.displayName);
         }
         dropdown.setValue(profile?.id ?? "").onChange(async (id) => {
-          await this.plugin.updateSettings({ activeProfileId: id });
-          this.plugin.bridge.disconnect();
+          await this.plugin.switchProfile(id);
           this.display();
         });
       })
@@ -56,11 +55,8 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
             const profiles = this.plugin.settings.profiles.filter(
               (candidate) => candidate.id !== profile.id,
             );
-            await this.plugin.updateSettings({
-              profiles,
-              activeProfileId: profiles[0]?.id ?? "",
-            });
-            this.plugin.bridge.disconnect();
+            await this.plugin.updateSettings({ profiles });
+            await this.plugin.switchProfile(profiles[0]?.id ?? "");
             this.display();
           }),
       );

@@ -166,8 +166,9 @@ export class RiebeckiteDiagnosticsView extends ItemView {
   }
 
   private async openDiagnostic(diagnostic: BridgeDiagnostic): Promise<void> {
-    const path = diagnostic.source?.path;
-    if (!path) return;
+    const source = diagnostic.source?.path;
+    if (!source) return;
+    const path = this.plugin.vaultPath(source) ?? source;
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile)
       await this.app.workspace.getLeaf(false).openFile(file, {

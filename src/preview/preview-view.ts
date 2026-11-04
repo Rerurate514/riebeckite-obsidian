@@ -38,10 +38,17 @@ export class RiebeckitePreviewView extends ItemView {
       container.createEl("p", { text: "Riebeckite is not connected." });
       return;
     }
+    const source = this.plugin.bridgeSource(file.path);
+    if (!source) {
+      container.createEl("p", {
+        text: "This note is outside the profile's mapped vault folder.",
+      });
+      return;
+    }
     const result = await this.plugin.bridge.resolvePage(
-      this.plugin.settings.serverUrl,
-      this.plugin.settings.bridgeToken,
-      file.path,
+      this.plugin.serverUrl(),
+      this.plugin.bridgeToken(),
+      source,
     );
     if (request !== this.request) return;
     if (result.kind !== "resolved") {
