@@ -13,6 +13,8 @@ Preview side pane, Publication Manager, and Document Diagnostics. Connection
 profiles support integrated and separately mapped content roots. The preview
 pane displays the actual local HonoX development page; Obsidian does not render
 Markdown itself. Publication data refreshes when the Bridge revision changes.
+Publication Manager also displays the SEO title, description, canonical URL,
+indexability, and issues reported by the Bridge.
 
 ## Connect to Riebeckite
 
@@ -118,8 +120,8 @@ Publication Manager requires the optional `publication` capability and
 Diagnostics View requires `diagnostics`. Older v1 servers remain compatible:
 the corresponding pane reports that the server does not support it. The
 implementation uses the server's `visibility`, routing, discovery, public
-location, reasons, and revision directly; it never derives a URL from a file
-name.
+location, reasons, revision, and SEO data directly; it never derives a URL from
+a file name or computes SEO results.
 
 Diagnostics with valid 1-based source positions mark the editor and open the
 verified vault file at that location. Markers show severity and message on

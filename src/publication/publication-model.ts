@@ -37,6 +37,16 @@ export function filterPublications(
   });
 }
 
+export function seoIssueLabel(issue: string): string {
+  const labels: Readonly<Record<string, string>> = {
+    MISSING_DESCRIPTION: "説明文がありません",
+    DESCRIPTION_TOO_LONG: "説明文が長すぎます",
+    TITLE_TOO_LONG: "タイトルが長すぎます",
+    NOT_INDEXABLE: "検索対象外です",
+  };
+  return labels[issue] ?? issue;
+}
+
 export function impactReasonLabel(type: string): string {
   const labels: Readonly<Record<string, string>> = {
     "new-output": "新しい出力",

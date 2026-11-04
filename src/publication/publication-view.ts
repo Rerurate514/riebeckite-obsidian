@@ -1,11 +1,16 @@
 import { ItemView, TFile, type WorkspaceLeaf } from "obsidian";
-import type { BridgeImpact, BridgeMutationPlan } from "../bridge/bridge-client";
+import type {
+  BridgeImpact,
+  BridgeMutationPlan,
+  BridgePublication,
+} from "../bridge/bridge-client";
 import type RiebeckitePlugin from "../main";
 import {
   filterPublications,
   impactReasonLabel,
   type PublicationFilter,
   type PublicationRow,
+  seoIssueLabel,
 } from "./publication-model";
 
 export const publicationViewType = "riebeckite-publication";
@@ -204,10 +209,10 @@ export class RiebeckitePublicationView extends ItemView {
           this.plugin.bridgeSource(row.path) ?? "",
         ) ?? "not loaded",
       ],
-      ["SEO", seoStatus(publication)],
     ]) {
       details.createEl("p", { text: `${label}: ${value}` });
     }
+    this.renderSeo(details, publication);
     const impact = this.impacts.get(row.path);
     if (impact) this.renderImpact(details, impact);
     if (publication.redirects.length) {
@@ -236,6 +241,33 @@ export class RiebeckitePublicationView extends ItemView {
       publication.visibility,
       publication.publishAt,
     );
+  }
+
+  private renderSeo(
+    container: HTMLElement,
+    publication: BridgePublication,
+  ): void {
+    const section = container.createDiv({ cls: "riebeckite-publication-seo" });
+    section.createEl("h6", { text: "SEO" });
+    const seo = publication.seo;
+    if (!seo) {
+      section.createEl("p", { text: "SEO information is unavailable." });
+      return;
+    }
+    for (const [label, value] of [
+      ["Title", seo.title],
+      ["Description", seo.description ?? "not supplied"],
+      ["Canonical URL", seo.canonicalUrl ?? "not supplied"],
+      ["Indexable", seo.indexable ? "yes" : "no"],
+      [
+        "Issues",
+        seo.issues.length
+          ? seo.issues.map(seoIssueLabel).join("; ")
+          : "no issues",
+      ],
+    ]) {
+      section.createEl("p", { text: `${label}: ${value}` });
+    }
   }
 
   private renderImpact(container: HTMLElement, impact: BridgeImpact): void {
@@ -405,15 +437,6 @@ export class RiebeckitePublicationView extends ItemView {
     if (result.kind === "resolved" && result.page.routable)
       window.open(result.previewUrl, "_blank", "noopener");
   }
-}
-
-function seoStatus(
-  publication: NonNullable<PublicationRow["publication"]>,
-): string {
-  if (!publication.discoverable) return "not indexed";
-  return publication.canonicalUrl
-    ? "indexable; canonical URL available"
-    : "indexable";
 }
 
 function mutationMessage(kind: string): string {

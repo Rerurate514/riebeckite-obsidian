@@ -65,6 +65,15 @@ export type BridgePublication = {
   redirects: readonly BridgeRedirect[];
   reasons: readonly string[];
   revision: number;
+  seo?: BridgePublicationSeo;
+};
+
+export type BridgePublicationSeo = {
+  title: string;
+  description: string | null;
+  canonicalUrl: string | null;
+  indexable: boolean;
+  issues: readonly string[];
 };
 
 export type BridgeRedirect = { from: string; to: string; status: number };
@@ -596,6 +605,10 @@ function parsePublication(
     )
   )
     return undefined;
+  const seo =
+    publication.seo === undefined
+      ? undefined
+      : parsePublicationSeo(publication.seo);
   return {
     source: value.entry.source.path,
     permalink: value.entry.permalink,
@@ -609,6 +622,27 @@ function parsePublication(
     redirects: publication.redirects,
     reasons: publication.reasons,
     revision: value.revision as number,
+    ...(seo === undefined ? {} : { seo }),
+  };
+}
+
+function parsePublicationSeo(value: unknown): BridgePublicationSeo | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.title !== "string" ||
+    !(typeof value.description === "string" || value.description === null) ||
+    !(typeof value.canonicalUrl === "string" || value.canonicalUrl === null) ||
+    typeof value.indexable !== "boolean" ||
+    !Array.isArray(value.issues) ||
+    !value.issues.every((issue) => typeof issue === "string")
+  )
+    return undefined;
+  return {
+    title: value.title,
+    description: value.description,
+    canonicalUrl: value.canonicalUrl,
+    indexable: value.indexable,
+    issues: value.issues,
   };
 }
 
