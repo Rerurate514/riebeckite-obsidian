@@ -306,6 +306,164 @@ test("reads build impact only when advertised by the Bridge", async () => {
   );
 });
 
+test("keeps build impact provenance returned by the Bridge", async () => {
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1"))
+      return response({ ...connectedStatus, capabilities: ["build-impact"] });
+    return response({
+      status: "resolved",
+      impact: {
+        completeness: "complete",
+        affectedOutputs: [
+          {
+            path: "hello/index.html",
+            producer: "content:hello",
+            dependencies: [{ type: "content", slug: "hello" }],
+            reason: { type: "content", slug: "hello" },
+          },
+        ],
+        unchangedOutputs: [],
+        removedOutputs: [],
+        fullRegenerationRequired: false,
+      },
+      revision: 1,
+    });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const result = await client.inspectImpact("a".repeat(32), "notes/hello.md");
+
+  assert.deepEqual(
+    result.kind === "resolved" && result.value.affectedOutputs[0],
+    {
+      path: "hello/index.html",
+      producer: "content:hello",
+      dependencies: [{ type: "content", slug: "hello" }],
+      reason: { type: "content", slug: "hello" },
+    },
+  );
+});
+
+test("treats omitted, null, and string publication times as compatible", async () => {
+  for (const [label, publishAt] of [
+    ["omitted", undefined],
+    ["null", null],
+    ["string", "2026-11-05T00:00:00.000Z"],
+  ] as const) {
+    const client = new BridgeClient(async (input) => {
+      if (input.url.endsWith("/bootstrap"))
+        return response({ origin: "http://127.0.0.1:4567" });
+      if (input.url.endsWith("/v1"))
+        return response({ ...connectedStatus, capabilities: ["publication"] });
+      return response({
+        status: "resolved",
+        entry: {
+          source: { path: "notes/hello.md" },
+          permalink: "/hello/",
+          locale: null,
+        },
+        publication: {
+          visibility: "public",
+          routable: true,
+          discoverable: true,
+          ...(publishAt === undefined ? {} : { publishAt }),
+          publicLocation: { permalink: "/hello/" },
+          redirects: [],
+          reasons: [],
+        },
+        revision: 1,
+      });
+    });
+    await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+    const result = await client.inspectPublication(
+      "a".repeat(32),
+      "notes/hello.md",
+    );
+
+    assert.equal(
+      result.kind === "resolved" && result.value.publishAt,
+      publishAt ?? null,
+      label,
+    );
+  }
+});
+
+test("treats omitted, null, and string page times as compatible", async () => {
+  for (const [label, publishAt] of [
+    ["omitted", undefined],
+    ["null", null],
+    ["string", "2026-11-05T00:00:00.000Z"],
+  ] as const) {
+    const client = new BridgeClient(async (input) => {
+      if (input.url.endsWith("/bootstrap"))
+        return response({ origin: "http://127.0.0.1:4567" });
+      if (input.url.endsWith("/v1")) return response(connectedStatus);
+      return response({
+        status: "resolved",
+        source: "notes/hello.md",
+        page: "/hello/",
+        visibility: "public",
+        routable: true,
+        discoverable: true,
+        locale: null,
+        ...(publishAt === undefined ? {} : { publishAt }),
+        revision: 1,
+        productionUrl: null,
+      });
+    });
+    await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+    const result = await client.resolvePage(
+      "http://127.0.0.1:3000",
+      "a".repeat(32),
+      "notes/hello.md",
+    );
+
+    assert.equal(
+      result.kind === "resolved" && result.page.publishAt,
+      publishAt ?? null,
+      label,
+    );
+  }
+});
+
+test("classifies mutation conflicts, expired approvals, and missing targets", async () => {
+  const responses = [
+    response(
+      {
+        planId: "plan",
+        applied: false,
+        conflicts: [{ code: "fingerprint-mismatch" }],
+      },
+      409,
+    ),
+    response({
+      planId: "plan",
+      applied: false,
+      conflicts: [{ code: "approval-expired" }],
+    }),
+    response({}, 404),
+  ];
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1")) return response(connectedStatus);
+    return responses.shift() ?? response({}, 500);
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const kinds = [
+    (await client.applyMutation("a".repeat(32), "b".repeat(32), "first")).kind,
+    (await client.applyMutation("a".repeat(32), "b".repeat(32), "second")).kind,
+    (await client.applyMutation("a".repeat(32), "b".repeat(32), "third")).kind,
+  ];
+
+  assert.deepEqual(kinds, ["conflict", "expired", "not-found"]);
+});
+
 test("submits reviewed mutation plans with both Bridge tokens", async () => {
   let mutationRequest: Parameters<BridgeRequest>[0] | undefined;
   const client = new BridgeClient(async (input) => {

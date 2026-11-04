@@ -29,8 +29,11 @@ Obsidian側でMarkdownを変換しません。Bridge revisionが変化すると�
 7. **Riebeckite: Open Document Diagnostics** を実行するとアクティブノートの診断を確認できます。
     成功した空配列だけを「問題なし」と表示し、サーバーから取得できない状態とは区別します。
 8. 公開用フロントマターを編集するには、アクティブプロファイルに別の **Bridge mutation token** を設定します。
-   Publication ManagerでPlanを作成・確認し、サーバー側の承認フローで承認した後に **Apply approved plan** を選びます。
-    ObsidianはPlanを承認せず、承認用secretも受け取りません。
+    Publication ManagerでPlanを作成・確認し、サーバー側の承認フローで承認した後に **Apply approved plan** を選びます。
+     ObsidianはPlanを承認せず、承認用secretも受け取りません。
+   Build Impactでは、変更・未変更・削除された各出力について、生成元、理由、依存コンテンツを確認できます。
+   Mutationが競合した場合はPlanを作り直し、承認の有効期限が切れた場合はPlanを作り直して再承認を得てください。
+   対象がない場合は再読み込みしてください。Obsidianが自動で再試行・再計画・承認することはありません。
 
 integratedプロファイルで必要なのはサーバーURLとペアリングトークンだけです。separate local / Gitでは
 Vaultフォルダとコンテンツルートも設定します。custom mappingでは複数のフォルダとコンテンツルートの対応を

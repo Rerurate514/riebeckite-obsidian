@@ -3,6 +3,7 @@ import type { BridgeImpact, BridgeMutationPlan } from "../bridge/bridge-client";
 import type RiebeckitePlugin from "../main";
 import {
   filterPublications,
+  impactReasonLabel,
   type PublicationFilter,
   type PublicationRow,
 } from "./publication-model";
@@ -208,11 +209,7 @@ export class RiebeckitePublicationView extends ItemView {
       details.createEl("p", { text: `${label}: ${value}` });
     }
     const impact = this.impacts.get(row.path);
-    if (impact) {
-      details.createEl("p", {
-        text: `Last build impact: ${impact.affectedOutputs.length} changed, ${impact.unchangedOutputs.length} unchanged, ${impact.removedOutputs.length} removed (${impact.completeness}).`,
-      });
-    }
+    if (impact) this.renderImpact(details, impact);
     if (publication.redirects.length) {
       details.createEl("p", {
         text: `Redirects: ${publication.redirects.map((redirect) => `${redirect.from} → ${redirect.to} (${redirect.status})`).join(", ")}`,
@@ -239,6 +236,35 @@ export class RiebeckitePublicationView extends ItemView {
       publication.visibility,
       publication.publishAt,
     );
+  }
+
+  private renderImpact(container: HTMLElement, impact: BridgeImpact): void {
+    const section = container.createDiv({
+      cls: "riebeckite-publication-impact",
+    });
+    section.createEl("h6", { text: "Build impact" });
+    const outputs = [
+      ["Changed", impact.affectedOutputs],
+      ["Unchanged", impact.unchangedOutputs],
+      ["Removed", impact.removedOutputs],
+    ] as const;
+    if (!outputs.some(([, items]) => items.length)) {
+      section.createEl("p", { text: "影響なし" });
+      return;
+    }
+    for (const [label, items] of outputs) {
+      if (!items.length) continue;
+      section.createEl("p", { text: `${label}: ${items.length}` });
+      for (const output of items) {
+        const dependencies = output.dependencies
+          .map((dependency) => dependency.slug)
+          .filter((slug): slug is string => slug !== undefined);
+        const reason = `${impactReasonLabel(output.reason.type)}${output.reason.slug ? `: ${output.reason.slug}` : ""}`;
+        section.createEl("p", {
+          text: `Path: ${output.path} · Producer: ${output.producer} · Reason: ${reason}${dependencies.length ? ` · Dependencies: ${dependencies.join(", ")}` : ""}`,
+        });
+      }
+    }
   }
 
   private renderMutation(
@@ -391,11 +417,17 @@ function seoStatus(
 }
 
 function mutationMessage(kind: string): string {
-  return kind === "unauthorized"
-    ? "The Bridge mutation token was rejected."
-    : kind === "unavailable"
-      ? "Frontmatter mutations are unavailable. Configure a mutation token and connect to the Bridge."
-      : "The Bridge returned an invalid mutation response.";
+  return kind === "conflict"
+    ? "ファイルが変更されたため適用できません。再計画してください。"
+    : kind === "expired"
+      ? "承認の有効期限が切れました。再度 plan を作成し、承認を得てください。"
+      : kind === "not-found"
+        ? "対象が見つかりません。再読み込みしてください。"
+        : kind === "unauthorized"
+          ? "The Bridge mutation token was rejected."
+          : kind === "unavailable"
+            ? "Frontmatter mutations are unavailable. Configure a mutation token and connect to the Bridge."
+            : "The Bridge returned an invalid mutation response.";
 }
 
 const filters: readonly { value: PublicationFilter; label: string }[] = [
