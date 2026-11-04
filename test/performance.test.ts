@@ -21,7 +21,11 @@ function churnHeap(): void {
   pressure.fill(1);
 }
 
-test("refreshes 10k diagnostic decorations without growing the heap", async () => {
+test("refreshes 10k diagnostic decorations without growing the heap", async (t) => {
+  if (!globalThis.gc) {
+    t.skip("heap floor needs --expose-gc; run pnpm test:perf");
+    return;
+  }
   const doc = EditorState.create({ doc: "a\n".repeat(10_000) }).doc;
   const diagnostics: readonly BridgeDiagnostic[] = Array.from(
     { length: 10_000 },
@@ -36,12 +40,12 @@ test("refreshes 10k diagnostic decorations without growing the heap", async () =
   };
 
   for (let index = 0; index < 3; index++) refresh();
-  forceGc();
   const samples: number[] = [];
   for (let index = 0; index < 12; index++) {
     refresh();
     churnHeap();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    forceGc();
     samples.push(heapMiB());
   }
 
