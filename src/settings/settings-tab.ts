@@ -1,5 +1,10 @@
 import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type RiebeckitePlugin from "../main";
+import {
+  activeProfile,
+  type ConnectionMode,
+  type ConnectionProfile,
+} from "./settings";
 
 export class RiebeckiteSettingsTab extends PluginSettingTab {
   constructor(
@@ -17,6 +22,49 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
     containerEl.createEl("p", {
       text: "Only loopback Riebeckite development servers can be connected.",
     });
+    const profile = activeProfile(this.plugin.settings);
+    new Setting(containerEl)
+      .setName("Connection profile")
+      .setDesc("Profiles keep pairing credentials separate for each site.")
+      .addDropdown((dropdown) => {
+        for (const candidate of this.plugin.settings.profiles) {
+          dropdown.addOption(candidate.id, candidate.displayName);
+        }
+        dropdown.setValue(profile?.id ?? "").onChange(async (id) => {
+          await this.plugin.updateSettings({ activeProfileId: id });
+          this.plugin.bridge.disconnect();
+          this.display();
+        });
+      })
+      .addButton((button) =>
+        button.setButtonText("Add").onClick(async () => {
+          const created = newProfile();
+          await this.plugin.updateSettings({
+            profiles: [...this.plugin.settings.profiles, created],
+            activeProfileId: created.id,
+          });
+          this.display();
+        }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("Delete")
+          .setWarning()
+          .setDisabled(!profile || this.plugin.settings.profiles.length < 2)
+          .onClick(async () => {
+            if (!profile) return;
+            const profiles = this.plugin.settings.profiles.filter(
+              (candidate) => candidate.id !== profile.id,
+            );
+            await this.plugin.updateSettings({
+              profiles,
+              activeProfileId: profiles[0]?.id ?? "",
+            });
+            this.plugin.bridge.disconnect();
+            this.display();
+          }),
+      );
+    if (profile) this.displayProfile(profile);
 
     new Setting(containerEl)
       .setName("Riebeckite Server URL")
@@ -74,4 +122,49 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
         }),
       );
   }
+
+  private displayProfile(profile: ConnectionProfile): void {
+    const { containerEl } = this;
+    new Setting(containerEl).setName("Profile name").addText((text) =>
+      text.setValue(profile.displayName).onChange(async (displayName) => {
+        await this.updateProfile({ displayName });
+      }),
+    );
+    new Setting(containerEl)
+      .setName("Connection mode")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("integrated", "Integrated")
+          .addOption("separate-local", "Separate local")
+          .addOption("separate-git", "Separate Git")
+          .addOption("custom-mapping", "Custom mapping")
+          .setValue(profile.mode)
+          .onChange(async (mode) => {
+            await this.updateProfile({ mode: mode as ConnectionMode });
+            this.display();
+          }),
+      );
+  }
+
+  private async updateProfile(
+    changes: Partial<ConnectionProfile>,
+  ): Promise<void> {
+    const active = activeProfile(this.plugin.settings);
+    if (!active) return;
+    await this.plugin.updateSettings({
+      profiles: this.plugin.settings.profiles.map((profile) =>
+        profile.id === active.id ? { ...profile, ...changes } : profile,
+      ),
+    });
+  }
+}
+
+function newProfile(): ConnectionProfile {
+  return {
+    id: crypto.randomUUID(),
+    displayName: "New Riebeckite site",
+    mode: "integrated",
+    serverUrl: "http://127.0.0.1:3000",
+    bridgeToken: "",
+  };
 }

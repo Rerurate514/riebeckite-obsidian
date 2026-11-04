@@ -19,6 +19,16 @@ export type BridgeStatus = {
     build: { status: "ready"; completedAt: number } | { status: "unavailable" };
   };
   inspection: { available: boolean };
+  identity?: {
+    siteId: string;
+    siteName: string;
+    contentRootId: string;
+    contentSourceKind:
+      | "integrated"
+      | "separate-local"
+      | "separate-git"
+      | "custom-mapping";
+  };
 };
 
 export type BridgePage = {
@@ -362,8 +372,22 @@ function parsePage(value: Record<string, unknown>): BridgePage | undefined {
     !Number.isInteger(value.revision)
   )
     return undefined;
+  if (value.identity !== undefined && !isBridgeIdentity(value.identity))
+    return undefined;
   const { status: _, ...page } = value;
   return page as unknown as BridgePage;
+}
+
+function isBridgeIdentity(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.siteId === "string" &&
+    typeof value.siteName === "string" &&
+    typeof value.contentRootId === "string" &&
+    ["integrated", "separate-local", "separate-git", "custom-mapping"].includes(
+      String(value.contentSourceKind),
+    )
+  );
 }
 
 function parsePublication(

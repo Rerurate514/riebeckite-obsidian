@@ -21,6 +21,7 @@ import {
   RiebeckitePublicationView,
 } from "./publication/publication-view";
 import {
+  activeProfile,
   defaultSettings,
   parseSettings,
   type RiebeckiteSettings,
@@ -123,16 +124,51 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async updateSettings(settings: Partial<RiebeckiteSettings>): Promise<void> {
-    this.settings = parseSettings({ ...this.settings, ...settings });
+    const current = activeProfile(this.settings);
+    const profiles = current
+      ? this.settings.profiles.map((profile) =>
+          profile.id === current.id
+            ? {
+                ...profile,
+                ...(typeof settings.serverUrl === "string"
+                  ? { serverUrl: settings.serverUrl }
+                  : {}),
+                ...(typeof settings.bridgeToken === "string"
+                  ? { bridgeToken: settings.bridgeToken }
+                  : {}),
+              }
+            : profile,
+        )
+      : this.settings.profiles;
+    this.settings = parseSettings({ ...this.settings, ...settings, profiles });
     await this.saveData(this.settings);
   }
 
   async connectBridge(): Promise<BridgeConnectionState> {
+    const profile = activeProfile(this.settings);
     const state = await this.bridge.connect(
-      this.settings.serverUrl,
-      this.settings.bridgeToken,
+      profile?.serverUrl ?? this.settings.serverUrl,
+      profile?.bridgeToken ?? this.settings.bridgeToken,
     );
     if (state.kind === "connected") await this.refreshViews();
+    if (state.kind === "connected") {
+      const profile = activeProfile(this.settings);
+      const identity = state.status.identity;
+      if (profile && identity) {
+        await this.updateSettings({
+          profiles: this.settings.profiles.map((candidate) =>
+            candidate.id === profile.id
+              ? {
+                  ...candidate,
+                  siteId: identity.siteId,
+                  contentRootId: identity.contentRootId,
+                  capabilityState: state.status.capabilities,
+                }
+              : candidate,
+          ),
+        });
+      }
+    }
     new Notice(connectionMessage(state));
     return state;
   }
@@ -200,8 +236,8 @@ export default class RiebeckitePlugin extends Plugin {
     const file = this.app.workspace.getActiveFile();
     if (!file || this.bridge.getState().kind !== "connected") return;
     const result = await this.bridge.resolvePage(
-      this.settings.serverUrl,
-      this.settings.bridgeToken,
+      activeProfile(this.settings)?.serverUrl ?? this.settings.serverUrl,
+      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
       file.path,
     );
     if (result.kind === "resolved" && result.page.routable) {
