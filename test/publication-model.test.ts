@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   filterPublications,
+  impactReasonLabel,
   type PublicationRow,
 } from "../src/publication/publication-model";
 
@@ -39,6 +40,12 @@ test("filters publication rows locally without a new Bridge request", () => {
     filterPublications(rows, "issues", "").map((row) => row.path),
     ["notes/missing.md"],
   );
+});
+
+test("maps known impact reasons and preserves unknown types", () => {
+  assert.equal(impactReasonLabel("content"), "コンテンツの変更");
+  assert.equal(impactReasonLabel("unavailable"), "理由不明");
+  assert.equal(impactReasonLabel("future-reason"), "future-reason");
 });
 
 function publication(

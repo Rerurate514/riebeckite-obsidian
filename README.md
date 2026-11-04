@@ -36,6 +36,11 @@ Markdown itself. Publication data refreshes when the Bridge revision changes.
    in the active profile. In Publication Manager, create and review a plan, have
    it approved by the server-side approval workflow, then select **Apply approved
     plan**. Obsidian cannot approve plans and never receives the approval secret.
+   Build Impact lists each changed, unchanged, or removed output with its producer,
+   reason, and content dependencies. If a mutation conflicts, make a new plan; if
+   approval expires, create a new plan and obtain approval again; if its target is
+   missing, reload before trying again. Obsidian never retries, replans, or approves
+   a mutation automatically.
 
 Integrated profiles require only the server URL and pairing token. Separate local
 and Git profiles additionally configure one Vault folder and content root. Custom

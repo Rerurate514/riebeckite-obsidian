@@ -37,6 +37,27 @@ export function filterPublications(
   });
 }
 
+export function impactReasonLabel(type: string): string {
+  const labels: Readonly<Record<string, string>> = {
+    "new-output": "新しい出力",
+    "kind-changed": "出力種別の変更",
+    "unknown-dependency": "不明な依存関係",
+    external: "外部依存の変更",
+    "derived-view": "派生ビューの変更",
+    "derived-query": "派生クエリの変更",
+    global: "グローバル依存の変更",
+    content: "コンテンツの変更",
+    tag: "タグの変更",
+    folder: "フォルダーの変更",
+    file: "ファイルの変更",
+    "public-location": "公開先の変更",
+    "content-query": "コンテンツクエリの変更",
+    projection: "プロジェクションの変更",
+    unavailable: "理由不明",
+  };
+  return labels[type] ?? type;
+}
+
 function matchesFilter(
   row: PublicationRow,
   filter: PublicationFilter,

@@ -81,10 +81,17 @@ export type BridgeDiagnostic = {
 
 export type BridgeImpact = {
   completeness: "complete" | "unknown";
-  affectedOutputs: readonly { path: string }[];
-  unchangedOutputs: readonly { path: string }[];
-  removedOutputs: readonly { path: string }[];
+  affectedOutputs: readonly BridgeImpactOutput[];
+  unchangedOutputs: readonly BridgeImpactOutput[];
+  removedOutputs: readonly BridgeImpactOutput[];
   fullRegenerationRequired: boolean;
+};
+
+export type BridgeImpactOutput = {
+  path: string;
+  producer: string;
+  dependencies: readonly { type: string; slug?: string }[];
+  reason: { type: string; slug?: string };
 };
 
 export type BridgeInspectionResult<T> =
@@ -118,6 +125,9 @@ export type BridgeMutationResponse<T> =
   | { kind: "resolved"; value: T }
   | { kind: "unauthorized" }
   | { kind: "unavailable" }
+  | { kind: "conflict" }
+  | { kind: "expired" }
+  | { kind: "not-found" }
   | { kind: "error" };
 
 export class BridgeClient implements Disposable {
@@ -336,7 +346,14 @@ export class BridgeClient implements Disposable {
       if (this.disposed || generation !== this.generation)
         return { kind: "unavailable" };
       if (response.status === 403) return { kind: "unauthorized" };
-      const value = response.status === 200 ? parse(response.json) : undefined;
+      const value = parse(response.json);
+      const failure = mutationFailureKind(
+        response.status,
+        response.json,
+        value,
+      );
+      if (failure) return { kind: failure };
+      if (response.status !== 200) return { kind: "error" };
       return value ? { kind: "resolved", value } : { kind: "error" };
     } catch {
       return { kind: "unavailable" };
@@ -512,7 +529,11 @@ function parsePage(value: Record<string, unknown>): BridgePage | undefined {
     typeof value.routable !== "boolean" ||
     typeof value.discoverable !== "boolean" ||
     !(typeof value.locale === "string" || value.locale === null) ||
-    !(typeof value.publishAt === "string" || value.publishAt === null) ||
+    !(
+      typeof value.publishAt === "string" ||
+      value.publishAt === null ||
+      value.publishAt === undefined
+    ) ||
     !(
       typeof value.productionUrl === "string" || value.productionUrl === null
     ) ||
@@ -521,8 +542,8 @@ function parsePage(value: Record<string, unknown>): BridgePage | undefined {
     return undefined;
   if (value.identity !== undefined && !isBridgeIdentity(value.identity))
     return undefined;
-  const { status: _, ...page } = value;
-  return page as unknown as BridgePage;
+  const { status: _, publishAt, ...page } = value;
+  return { ...page, publishAt: publishAt ?? null } as unknown as BridgePage;
 }
 
 function isBridgeIdentity(value: unknown): boolean {
@@ -559,7 +580,8 @@ function parsePublication(
     typeof publication.discoverable !== "boolean" ||
     !(
       typeof publication.publishAt === "string" ||
-      publication.publishAt === null
+      publication.publishAt === null ||
+      publication.publishAt === undefined
     ) ||
     !Array.isArray(publication.redirects) ||
     !publication.redirects.every(isRedirect) ||
@@ -581,7 +603,7 @@ function parsePublication(
     visibility: publication.visibility as BridgePublication["visibility"],
     routable: publication.routable,
     discoverable: publication.discoverable,
-    publishAt: publication.publishAt,
+    publishAt: publication.publishAt ?? null,
     publicLocation: publication.publicLocation,
     canonicalUrl: publication.canonicalUrl ?? null,
     redirects: publication.redirects,
@@ -615,15 +637,21 @@ function parseImpact(value: Record<string, unknown>): BridgeImpact | undefined {
     !outputs.every(
       (output) =>
         Array.isArray(output) &&
-        output.every((item) => isRecord(item) && typeof item.path === "string"),
+        output.every((item) => parseImpactOutput(item)),
     )
   )
     return undefined;
   return {
     completeness: impact.completeness as BridgeImpact["completeness"],
-    affectedOutputs: impact.affectedOutputs as { path: string }[],
-    unchangedOutputs: impact.unchangedOutputs as { path: string }[],
-    removedOutputs: impact.removedOutputs as { path: string }[],
+    affectedOutputs: (impact.affectedOutputs as unknown[]).map(
+      parseImpactOutput,
+    ) as BridgeImpactOutput[],
+    unchangedOutputs: (impact.unchangedOutputs as unknown[]).map(
+      parseImpactOutput,
+    ) as BridgeImpactOutput[],
+    removedOutputs: (impact.removedOutputs as unknown[]).map(
+      parseImpactOutput,
+    ) as BridgeImpactOutput[],
     fullRegenerationRequired: impact.fullRegenerationRequired,
   };
 }
@@ -653,6 +681,46 @@ function parseMutationResult(value: unknown): BridgeMutationResult | undefined {
     applied: value.applied,
     conflicts: value.conflicts as { code: string }[],
   };
+}
+
+function mutationFailureKind(
+  status: number,
+  response: unknown,
+  value: unknown,
+): "conflict" | "expired" | "not-found" | undefined {
+  const codes = mutationCodes(response);
+  if (status === 410 || codes.some((code) => code.includes("expired")))
+    return "expired";
+  if (
+    status === 404 ||
+    codes.some(
+      (code) =>
+        code.includes("not-found") ||
+        code.includes("not_found") ||
+        code.includes("missing"),
+    )
+  )
+    return "not-found";
+  if (status === 409 || isRejectedMutationResult(value)) return "conflict";
+  return undefined;
+}
+
+function mutationCodes(value: unknown): string[] {
+  if (!isRecord(value)) return [];
+  const codes = [value.code, value.reason];
+  if (Array.isArray(value.conflicts))
+    codes.push(
+      ...value.conflicts.map((conflict) =>
+        isRecord(conflict) ? conflict.code : undefined,
+      ),
+    );
+  return codes
+    .filter((code): code is string => typeof code === "string")
+    .map((code) => code.toLowerCase());
+}
+
+function isRejectedMutationResult(value: unknown): boolean {
+  return isRecord(value) && value.applied === false;
 }
 
 function parseDiagnostic(value: unknown): BridgeDiagnostic | undefined {
@@ -694,6 +762,41 @@ function parseDiagnostic(value: unknown): BridgeDiagnostic | undefined {
     related: (value.related ?? []) as BridgeDiagnostic["related"],
     fix: value.fix as BridgeDiagnostic["fix"],
   };
+}
+
+function parseImpactOutput(value: unknown): BridgeImpactOutput | undefined {
+  if (!isRecord(value) || typeof value.path !== "string") return undefined;
+  if (value.producer !== undefined && typeof value.producer !== "string")
+    return undefined;
+  if (
+    value.dependencies !== undefined &&
+    (!Array.isArray(value.dependencies) ||
+      !value.dependencies.every(
+        (dependency) =>
+          isRecord(dependency) &&
+          typeof dependency.type === "string" &&
+          (typeof dependency.slug === "string" ||
+            dependency.slug === undefined),
+      ))
+  )
+    return undefined;
+  if (
+    value.reason !== undefined &&
+    (!isRecord(value.reason) ||
+      typeof value.reason.type !== "string" ||
+      (typeof value.reason.slug !== "string" &&
+        value.reason.slug !== undefined))
+  )
+    return undefined;
+  return {
+    path: value.path,
+    producer: value.producer ?? "unknown",
+    dependencies: (value.dependencies ??
+      []) as BridgeImpactOutput["dependencies"],
+    reason: (value.reason ?? {
+      type: "unavailable",
+    }) as BridgeImpactOutput["reason"],
+  } as BridgeImpactOutput;
 }
 
 function isDiagnosticSource(value: unknown): boolean {
