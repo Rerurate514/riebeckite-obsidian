@@ -18,6 +18,7 @@ export class RiebeckitePublicationView extends ItemView {
   private selectedPath: string | undefined;
   private request = 0;
   private diagnosticRequest = 0;
+  private visibleRows = 100;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -59,6 +60,7 @@ export class RiebeckitePublicationView extends ItemView {
     }
     const request = ++this.request;
     const files = this.app.vault.getMarkdownFiles();
+    this.visibleRows = 100;
     for (const file of files) {
       this.rows.set(file.path, {
         path: file.path,
@@ -76,6 +78,8 @@ export class RiebeckitePublicationView extends ItemView {
         const result = await this.plugin.editor.publication(file.path);
         if (request !== this.request) return;
         this.rows.set(file.path, toRow(file, result));
+        if (index % 25 === 0)
+          this.render(`Refreshing publication data… ${index}/${files.length}`);
       }
     };
     await Promise.all(
@@ -140,7 +144,7 @@ export class RiebeckitePublicationView extends ItemView {
     const list = container.createEl("div", {
       cls: "riebeckite-publication-list",
     });
-    for (const row of rows) {
+    for (const row of rows.slice(0, this.visibleRows)) {
       const button = list.createEl("button", {
         text: `${row.title} · ${row.publication?.visibility ?? row.state}`,
         cls: "riebeckite-publication-row",
@@ -154,6 +158,14 @@ export class RiebeckitePublicationView extends ItemView {
         this.render();
         void this.loadDiagnosticSummary(row.path);
         void this.loadImpact(row.path);
+      };
+    }
+    if (rows.length > this.visibleRows) {
+      list.createEl("button", {
+        text: `Show ${Math.min(100, rows.length - this.visibleRows)} more (${rows.length - this.visibleRows} remaining)`,
+      }).onclick = () => {
+        this.visibleRows += 100;
+        this.render();
       };
     }
     const selected = this.selectedPath
