@@ -19,6 +19,7 @@ import {
   diagnosticsViewType,
   RiebeckiteDiagnosticsView,
 } from "./diagnostics/diagnostics-view";
+import { BridgePolling } from "./lifecycle/bridge-polling";
 import { ResourceRegistry } from "./lifecycle/resource-registry";
 import { previewViewType, RiebeckitePreviewView } from "./preview/preview-view";
 import {
@@ -53,11 +54,12 @@ export default class RiebeckitePlugin extends Plugin {
       activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
     () => activeProfile(this.settings)?.mutationToken,
     (path) => mapVaultPath(activeProfile(this.settings), path),
+    () => this.canMutate(),
   );
   private refreshTimer: number | undefined;
-  private reconnect = false;
-  private retryDelayMs = 5_000;
-  private nextReconnectAt = 0;
+  private readonly polling = new BridgePolling(
+    async () => (await this.refreshBridgeStatus()).kind,
+  );
   private readonly diagnostics = new Map<string, readonly BridgeDiagnostic[]>();
 
   async onload(): Promise<void> {
@@ -89,9 +91,6 @@ export default class RiebeckitePlugin extends Plugin {
       );
       this.registerEvent(
         this.app.vault.on("modify", () => this.scheduleRefreshViews()),
-      );
-      this.registerInterval(
-        window.setInterval(() => void this.refreshBridgeStatus(), 5_000),
       );
       this.addCommand({
         id: "open-settings",
@@ -132,9 +131,7 @@ export default class RiebeckitePlugin extends Plugin {
         id: "disconnect",
         name: "Disconnect from Riebeckite",
         callback: () => {
-          this.bridge.disconnect();
-          this.reconnect = false;
-          void this.refreshViews();
+          this.disconnectBridge();
           new Notice("Disconnected from Riebeckite.");
         },
       });
@@ -143,6 +140,7 @@ export default class RiebeckitePlugin extends Plugin {
         name: "Check Riebeckite Connection",
         callback: () => void this.checkBridge(),
       });
+      this.polling.start();
     } catch (error) {
       console.error("Unable to load Riebeckite", error);
       new Notice(
@@ -153,6 +151,7 @@ export default class RiebeckitePlugin extends Plugin {
 
   onunload(): void {
     if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer);
+    this.polling.stop();
     this.resources.dispose();
   }
 
@@ -180,12 +179,16 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async switchProfile(id: string): Promise<void> {
+    this.polling.stop();
     await this.updateSettings({ activeProfileId: id });
     this.bridge.disconnect();
-    this.reconnect = false;
-    this.retryDelayMs = 5_000;
-    this.nextReconnectAt = 0;
     await this.refreshViews();
+  }
+
+  disconnectBridge(): void {
+    this.bridge.disconnect();
+    this.polling.stop();
+    void this.refreshViews();
   }
 
   async connectBridge(silent = false): Promise<BridgeConnectionState> {
@@ -195,9 +198,7 @@ export default class RiebeckitePlugin extends Plugin {
       profile?.bridgeToken ?? this.settings.bridgeToken,
     );
     if (state.kind === "connected") {
-      this.reconnect = true;
-      this.retryDelayMs = 5_000;
-      this.nextReconnectAt = 0;
+      this.polling.start();
       await this.refreshViews();
     }
     if (state.kind === "connected") {
@@ -229,6 +230,7 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async checkBridge(): Promise<BridgeConnectionState> {
+    this.polling.stop();
     this.bridge.disconnect();
     return await this.connectBridge();
   }
@@ -269,9 +271,7 @@ export default class RiebeckitePlugin extends Plugin {
     refreshDiagnosticDecorations();
   }
 
-  private async refreshBridgeStatus(): Promise<void> {
-    if (!this.reconnect) return;
-    if (Date.now() < this.nextReconnectAt) return;
+  private async refreshBridgeStatus(): Promise<BridgeConnectionState> {
     const profile = activeProfile(this.settings);
     const token = profile?.bridgeToken ?? this.settings.bridgeToken;
     const previousRevision = this.bridge.getRevision();
@@ -280,18 +280,21 @@ export default class RiebeckitePlugin extends Plugin {
         ? await this.bridge.refreshStatus(token)
         : await this.connectBridge(true);
     if (state.kind === "connected") {
-      this.retryDelayMs = 5_000;
-      this.nextReconnectAt = 0;
       if (state.status.development.revision !== previousRevision)
         await this.refreshViews();
-      return;
     }
-    if (state.kind === "unauthorized") {
-      this.reconnect = false;
-      return;
-    }
-    this.nextReconnectAt = Date.now() + this.retryDelayMs;
-    this.retryDelayMs = Math.min(this.retryDelayMs * 2, 60_000);
+    return state;
+  }
+
+  private canMutate(): boolean {
+    const profile = activeProfile(this.settings);
+    const state = this.bridge.getState();
+    return !(
+      profile?.siteId &&
+      state.kind === "connected" &&
+      state.status.identity &&
+      checkSiteIdentity(profile, state.status.identity) === "mismatch"
+    );
   }
 
   private openSettings(): void {

@@ -252,7 +252,7 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
       )
       .addButton((button) =>
         button.setButtonText("Disconnect").onClick(() => {
-          this.plugin.bridge.disconnect();
+          this.plugin.disconnectBridge();
           this.display();
         }),
       );
