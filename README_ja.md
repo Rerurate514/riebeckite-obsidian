@@ -11,7 +11,10 @@ English: [README.md](./README.md)
 Bridge Protocol v1による状態取得、解決済みページ状態、Live Previewサイドペイン、Publication
 Manager、Document Diagnosticsを実装済みです。接続プロファイルは統合コンテンツルートと別管理の
 コンテンツルートのマッピングに対応します。Previewは実際のローカルHonoX開発ページを表示し、
-Obsidian側でMarkdownを変換しません。Bridge revisionが変化すると公開情報を更新します。
+Obsidian側でMarkdownを変換しません。Bridge revisionが変化すると公開情報を更新します。接続中は
+5秒ごとに状態を確認し、一時的な接続失敗時は5秒、10秒、20秒、40秒、以降は最大60秒で再試行します。
+ペアリング拒否時は自動再試行しません。revision更新ではプラグインのViewだけを更新するため、編集中の
+エディタ本文・カーソル・選択は変更せず、Mutationも自動適用しません。
 
 ## Riebeckiteへの接続
 
@@ -107,7 +110,9 @@ Publication Managerには任意capabilityの`publication`、Diagnostics Viewに�
 単位で行末までにクランプします。診断一覧は更新ごとにDOMを置き換え、新しい更新またはViewの破棄後に届いた
 応答は反映しません。装飾の構築は位置のソート1回を除き線形で、10,000件の診断で検証しています。ただし、
 非常に大きな結果セットでは診断ごとに1つの操作要素を描画します。接続中は5秒ごとにBridge状態を確認し、
-revisionが変わるとViewを更新します。Vault全体の取得は4 workerで行い、最初の100ノートずつを
+revisionが変わるとViewを更新します。一時的な失敗時は5〜60秒の指数バックオフで再試行し、ペアリング
+拒否時は自動再試行しません。これらの更新はエディタの入力・カーソル・選択を変更せず、Mutationも
+自動適用しません。Vault全体の取得は4 workerで行い、最初の100ノートずつを
 表示します。Safe MutationはvisibilityとpublishAtのフロントマター編集だけに限定し、2種類のBridge
 tokenと短時間だけ有効な独立したサーバー側承認を必須にします。リリース前には実際のObsidianでE2E検証が
 必要です。

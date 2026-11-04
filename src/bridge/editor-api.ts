@@ -16,6 +16,7 @@ export class EditorApi {
     private readonly mutationToken: () => string | undefined,
     private readonly source: (path: string) => string | undefined = (path) =>
       path,
+    private readonly mutationsAllowed: () => boolean = () => true,
   ) {}
 
   get revision(): number | undefined {
@@ -57,7 +58,7 @@ export class EditorApi {
   ): Promise<BridgeMutationResponse<BridgeMutationPlan>> {
     const path = this.source(source);
     const mutationToken = this.mutationToken();
-    return path && mutationToken
+    return path && mutationToken && this.mutationsAllowed()
       ? this.bridge.planFrontmatter(
           this.token(),
           mutationToken,
@@ -72,7 +73,7 @@ export class EditorApi {
     planId: string,
   ): Promise<BridgeMutationResponse<BridgeMutationResult>> {
     const mutationToken = this.mutationToken();
-    return mutationToken
+    return mutationToken && this.mutationsAllowed()
       ? this.bridge.applyMutation(this.token(), mutationToken, planId)
       : Promise.resolve({ kind: "unavailable" });
   }

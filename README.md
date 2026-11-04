@@ -13,6 +13,11 @@ Preview side pane, Publication Manager, and Document Diagnostics. Connection
 profiles support integrated and separately mapped content roots. The preview
 pane displays the actual local HonoX development page; Obsidian does not render
 Markdown itself. Publication data refreshes when the Bridge revision changes.
+While connected, status polling runs every five seconds; temporary connection
+failures retry after 5, 10, 20, 40, then at most 60 seconds. A rejected pairing
+does not retry automatically. Revision updates refresh the plugin views only, so
+they do not change the active editor text, cursor, or selection, and do not
+apply mutations automatically.
 
 ## Connect to Riebeckite
 
@@ -124,8 +129,10 @@ ignores responses that arrive after a newer refresh or close. Decoration
 construction is linear apart from one position sort and is verified against
 10,000 diagnostics; very large result sets still render one control per
 diagnostic. The plugin polls Bridge status every five seconds while connected
-and refreshes views when its revision changes. Vault scans use four workers and
-render the first 100 notes at a time. Safe Mutation is limited to frontmatter
+and refreshes views when its revision changes. Temporary failures retry with a
+5-to-60-second exponential backoff; rejected pairing stops automatic retries.
+These refreshes do not alter editor input or automatically apply mutations.
+Vault scans use four workers and render the first 100 notes at a time. Safe Mutation is limited to frontmatter
 visibility and publish-time edits, requires both Bridge tokens, and still
 requires a separate, short-lived server-side approval. Real Obsidian E2E
 verification remains required before release.
