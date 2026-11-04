@@ -19,6 +19,16 @@ export type BridgeStatus = {
     build: { status: "ready"; completedAt: number } | { status: "unavailable" };
   };
   inspection: { available: boolean };
+  identity?: {
+    siteId: string;
+    siteName: string;
+    contentRootId: string;
+    contentSourceKind:
+      | "integrated"
+      | "separate-local"
+      | "separate-git"
+      | "custom-mapping";
+  };
 };
 
 export type BridgePage = {
@@ -67,6 +77,14 @@ export type BridgeDiagnostic = {
   fix: { kind: string; description: string } | undefined;
 };
 
+export type BridgeImpact = {
+  completeness: "complete" | "unknown";
+  affectedOutputs: readonly { path: string }[];
+  unchangedOutputs: readonly { path: string }[];
+  removedOutputs: readonly { path: string }[];
+  fullRegenerationRequired: boolean;
+};
+
 export type BridgeInspectionResult<T> =
   | { kind: "resolved"; value: T; revision: number }
   | { kind: "unavailable" }
@@ -79,7 +97,26 @@ export type BridgeRequest = (input: {
   method: string;
   headers: Record<string, string>;
   throw: boolean;
+  body?: string;
 }) => Promise<{ status: number; json: unknown }>;
+
+export type BridgeMutationPlan = {
+  id: string;
+  changes: readonly unknown[];
+  warnings: readonly unknown[];
+};
+
+export type BridgeMutationResult = {
+  planId: string;
+  applied: boolean;
+  conflicts: readonly { code: string }[];
+};
+
+export type BridgeMutationResponse<T> =
+  | { kind: "resolved"; value: T }
+  | { kind: "unauthorized" }
+  | { kind: "unavailable" }
+  | { kind: "error" };
 
 export class BridgeClient implements Disposable {
   private state: BridgeConnectionState = { kind: "disconnected" };
@@ -175,6 +212,43 @@ export class BridgeClient implements Disposable {
     );
   }
 
+  async refreshStatus(token: string): Promise<BridgeConnectionState> {
+    const origin = this.privateOrigin;
+    if (this.disposed || !origin) return this.state;
+    const generation = this.generation;
+    try {
+      const response = await this.requestWithTimeout({
+        url: `${origin}/__riebeckite/bridge/v1`,
+        method: "GET",
+        headers: {
+          "x-riebeckite-bridge-token": token,
+          "x-riebeckite-bridge-protocol": "1",
+        },
+        throw: false,
+      });
+      if (this.disposed || generation !== this.generation) return this.state;
+      if (response.status === 403)
+        return this.setState({
+          kind: "unauthorized",
+          message: "Pairing was rejected.",
+        });
+      const status =
+        response.status === 200 ? parseStatus(response.json) : undefined;
+      return status
+        ? this.setConnected(origin, status)
+        : this.setState({
+            kind: "unavailable",
+            message: "Bridge is unavailable.",
+          });
+    } catch {
+      if (this.disposed || generation !== this.generation) return this.state;
+      return this.setState({
+        kind: "unavailable",
+        message: "Could not reach the Bridge.",
+      });
+    }
+  }
+
   inspectPublication(
     token: string,
     source: string,
@@ -189,8 +263,86 @@ export class BridgeClient implements Disposable {
     return this.inspect("diagnostics", token, source, parseDiagnostics);
   }
 
+  inspectImpact(
+    token: string,
+    source: string,
+  ): Promise<BridgeInspectionResult<BridgeImpact>> {
+    return this.inspect("impact", token, source, parseImpact);
+  }
+
+  planFrontmatter(
+    token: string,
+    mutationToken: string,
+    path: string,
+    set: Record<string, unknown>,
+    remove: readonly string[],
+  ): Promise<BridgeMutationResponse<BridgeMutationPlan>> {
+    return this.mutate(
+      "mutations/plan",
+      token,
+      mutationToken,
+      {
+        operations: [{ kind: "frontmatter", path, set, remove }],
+      },
+      parseMutationPlan,
+    );
+  }
+
+  applyMutation(
+    token: string,
+    mutationToken: string,
+    planId: string,
+  ): Promise<BridgeMutationResponse<BridgeMutationResult>> {
+    return this.mutate(
+      `mutations/${encodeURIComponent(planId)}/apply`,
+      token,
+      mutationToken,
+      {},
+      parseMutationResult,
+    );
+  }
+
+  private async mutate<T>(
+    endpoint: string,
+    token: string,
+    mutationToken: string,
+    body: Record<string, unknown>,
+    parse: (value: unknown) => T | undefined,
+  ): Promise<BridgeMutationResponse<T>> {
+    const origin = this.privateOrigin;
+    if (
+      this.disposed ||
+      !origin ||
+      token.length < 32 ||
+      mutationToken.length < 32
+    )
+      return { kind: "unavailable" };
+    const generation = this.generation;
+    try {
+      const response = await this.requestWithTimeout({
+        url: `${origin}/__riebeckite/bridge/v1/${endpoint}`,
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-riebeckite-bridge-token": token,
+          "x-riebeckite-bridge-protocol": "1",
+          "x-riebeckite-bridge-mutation-token": mutationToken,
+        },
+        body: JSON.stringify(body),
+        throw: false,
+      });
+      if (this.disposed || generation !== this.generation)
+        return { kind: "unavailable" };
+      if (response.status === 403) return { kind: "unauthorized" };
+      const value = response.status === 200 ? parse(response.json) : undefined;
+      return value ? { kind: "resolved", value } : { kind: "error" };
+    } catch {
+      return { kind: "unavailable" };
+    }
+  }
+
   private async inspect<T>(
-    capability: "publication" | "diagnostics",
+    capability: "publication" | "diagnostics" | "impact",
     token: string,
     source: string,
     parse: (value: Record<string, unknown>) => T | undefined,
@@ -198,7 +350,10 @@ export class BridgeClient implements Disposable {
     const origin = this.privateOrigin;
     if (this.disposed || !origin || !isContentPath(source))
       return { kind: "unavailable" };
-    if (!this.hasCapability(capability)) return { kind: "unsupported" };
+    if (
+      !this.hasCapability(capability === "impact" ? "build-impact" : capability)
+    )
+      return { kind: "unsupported" };
     const generation = this.generation;
     try {
       const response = await this.requestWithTimeout({
@@ -362,8 +517,22 @@ function parsePage(value: Record<string, unknown>): BridgePage | undefined {
     !Number.isInteger(value.revision)
   )
     return undefined;
+  if (value.identity !== undefined && !isBridgeIdentity(value.identity))
+    return undefined;
   const { status: _, ...page } = value;
   return page as unknown as BridgePage;
+}
+
+function isBridgeIdentity(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.siteId === "string" &&
+    typeof value.siteName === "string" &&
+    typeof value.contentRootId === "string" &&
+    ["integrated", "separate-local", "separate-git", "custom-mapping"].includes(
+      String(value.contentSourceKind),
+    )
+  );
 }
 
 function parsePublication(
@@ -428,6 +597,60 @@ function parseDiagnostics(
   return diagnostics.every((diagnostic) => diagnostic !== undefined)
     ? (diagnostics as BridgeDiagnostic[])
     : undefined;
+}
+
+function parseImpact(value: Record<string, unknown>): BridgeImpact | undefined {
+  if (value.status !== "resolved" || !isRecord(value.impact)) return undefined;
+  const impact = value.impact;
+  const outputs = [
+    impact.affectedOutputs,
+    impact.unchangedOutputs,
+    impact.removedOutputs,
+  ];
+  if (
+    !["complete", "unknown"].includes(String(impact.completeness)) ||
+    typeof impact.fullRegenerationRequired !== "boolean" ||
+    !outputs.every(
+      (output) =>
+        Array.isArray(output) &&
+        output.every((item) => isRecord(item) && typeof item.path === "string"),
+    )
+  )
+    return undefined;
+  return {
+    completeness: impact.completeness as BridgeImpact["completeness"],
+    affectedOutputs: impact.affectedOutputs as { path: string }[],
+    unchangedOutputs: impact.unchangedOutputs as { path: string }[],
+    removedOutputs: impact.removedOutputs as { path: string }[],
+    fullRegenerationRequired: impact.fullRegenerationRequired,
+  };
+}
+
+function parseMutationPlan(value: unknown): BridgeMutationPlan | undefined {
+  return isRecord(value) &&
+    typeof value.id === "string" &&
+    Array.isArray(value.changes) &&
+    Array.isArray(value.warnings)
+    ? { id: value.id, changes: value.changes, warnings: value.warnings }
+    : undefined;
+}
+
+function parseMutationResult(value: unknown): BridgeMutationResult | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.planId !== "string" ||
+    typeof value.applied !== "boolean" ||
+    !Array.isArray(value.conflicts) ||
+    !value.conflicts.every(
+      (conflict) => isRecord(conflict) && typeof conflict.code === "string",
+    )
+  )
+    return undefined;
+  return {
+    planId: value.planId,
+    applied: value.applied,
+    conflicts: value.conflicts as { code: string }[],
+  };
 }
 
 function parseDiagnostic(value: unknown): BridgeDiagnostic | undefined {

@@ -1,17 +1,17 @@
 # Obsidian向け Riebeckite
 
 Riebeckiteは、ローカルの[Riebeckite](https://github.com/Rerurate514/riebeckite)
-開発サーバーへObsidianを接続します。Bridgeを読み取るだけで、ノートの公開や
-Vaultデータの変更は行いません。
+開発サーバーへObsidianを接続します。Bridgeのデータを読み取り、明示的に確認しサーバー側で承認された
+フロントマター編集だけを実行できます。
 
 English: [README.md](./README.md)
 
 ## 開発状況
 
 Bridge Protocol v1による状態取得、解決済みページ状態、Live Previewサイドペイン、Publication
-Manager、Document Diagnosticsを実装済みです。Previewは実際のローカルHonoX開発ページを表示し、
-Obsidian側でMarkdownを変換しません。このプラグインは読み取り専用です。公開状態の変更とQuick Fixは
-Safe Mutation APIの確定待ちです。
+Manager、Document Diagnosticsを実装済みです。接続プロファイルは統合コンテンツルートと別管理の
+コンテンツルートのマッピングに対応します。Previewは実際のローカルHonoX開発ページを表示し、
+Obsidian側でMarkdownを変換しません。Bridge revisionが変化すると公開情報を更新します。
 
 ## Riebeckiteへの接続
 
@@ -25,7 +25,10 @@ Safe Mutation APIの確定待ちです。
    取得する場合だけ **Refresh vault** を選びます。フィルタと検索は取得済みのローカル結果だけを対象とし、
    キー入力ごとにBridgeへ問い合わせません。
 6. **Riebeckite: Open Document Diagnostics** を実行するとアクティブノートの診断を確認できます。
-   成功した空配列だけを「問題なし」と表示し、サーバーから取得できない状態とは区別します。
+    成功した空配列だけを「問題なし」と表示し、サーバーから取得できない状態とは区別します。
+7. 公開用フロントマターを編集するには、アクティブプロファイルに別の **Bridge mutation token** を設定します。
+   Publication ManagerでPlanを作成・確認し、サーバー側の承認フローで承認した後に **Apply approved plan** を選びます。
+   ObsidianはPlanを承認せず、承認用secretも受け取りません。
 
 `localhost`、`127.0.0.0/8`、`::1` 以外のURLは受け付けません。Bridgeはトークン指定時だけ
 有効になり、loopbackだけで待ち受けます。Cross-Originおよび転送ヘッダー付きのリクエストは
@@ -81,7 +84,8 @@ pnpm build:release
 5. **Disconnect** を選んだ後にプラグインを無効化・再有効化し、コマンドが重複登録されないことを確認します。
 6. `publication` と `diagnostics` capabilityを通知するサーバーでは両Viewを開き、Public、Draft、
    Scheduled、Unlistedの値がRiebeckiteと一致することを確認します。非routableノートには開発プレビューを
-   開く操作がないこと、フィルタ・検索で追加通信しないこと、診断がVault内のファイルだけを開くことも確認します。
+    開く操作がないこと、フィルタ・検索で追加通信しないこと、診断が有効な位置をエディタに表示し、
+    Vault内のファイルだけを開くことも確認します。
 
 ## Bridge capabilityと制約
 
@@ -90,11 +94,11 @@ Publication Managerには任意capabilityの`publication`、Diagnostics Viewに�
 サーバーの`visibility`、routing、discovery、public location、理由、revisionをそのまま使用し、
 ファイル名からURLを推測しません。
 
-サーバーのline / columnは任意ですが、現時点では基点の規約が文書化されていません。そのため診断では
-Vault内と確認できたファイルだけを開き、カーソル移動とエディタ内Decorationは行いません。Unicode文字列や
-古いrevisionに対して誤った位置を示さないためです。Editor Decoration、カーソル移動、SSE更新、
-Safe Mutation操作は、安定したRangeとrevisionの契約が確定するまで **UNVERIFIED / 未実装** です。
-サイトを再ビルドまたは再接続した後はRefreshを使用してください。
+有効な1始まりの位置情報を持つ診断は、エディタにマーカーを表示し、その位置でVault内と確認できたファイルを
+開きます。接続中は5秒ごとにBridge状態を確認し、revisionが変わるとViewを更新します。Vault全体の取得は
+4 workerで行い、最初の100ノートずつを表示します。Safe MutationはvisibilityとpublishAtのフロントマター
+編集だけに限定し、2種類のBridge tokenと短時間だけ有効な独立したサーバー側承認を必須にします。
+リリース前には実際のObsidianでE2E検証が必要です。
 
 ## リリース
 

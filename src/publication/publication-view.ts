@@ -1,4 +1,5 @@
 import { ItemView, TFile, type WorkspaceLeaf } from "obsidian";
+import type { BridgeImpact, BridgeMutationPlan } from "../bridge/bridge-client";
 import type RiebeckitePlugin from "../main";
 import {
   filterPublications,
@@ -11,11 +12,15 @@ export const publicationViewType = "riebeckite-publication";
 export class RiebeckitePublicationView extends ItemView {
   private readonly rows = new Map<string, PublicationRow>();
   private readonly diagnosticSummaries = new Map<string, string>();
+  private readonly impacts = new Map<string, BridgeImpact>();
   private filter: PublicationFilter = "all";
   private query = "";
   private selectedPath: string | undefined;
   private request = 0;
   private diagnosticRequest = 0;
+  private visibleRows = 100;
+  private mutationPlan: { path: string; plan: BridgeMutationPlan } | undefined;
+  private mutationMessage: string | undefined;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -57,6 +62,7 @@ export class RiebeckitePublicationView extends ItemView {
     }
     const request = ++this.request;
     const files = this.app.vault.getMarkdownFiles();
+    this.visibleRows = 100;
     for (const file of files) {
       this.rows.set(file.path, {
         path: file.path,
@@ -74,6 +80,8 @@ export class RiebeckitePublicationView extends ItemView {
         const result = await this.plugin.editor.publication(file.path);
         if (request !== this.request) return;
         this.rows.set(file.path, toRow(file, result));
+        if (index % 25 === 0)
+          this.render(`Refreshing publication data… ${index}/${files.length}`);
       }
     };
     await Promise.all(
@@ -138,7 +146,7 @@ export class RiebeckitePublicationView extends ItemView {
     const list = container.createEl("div", {
       cls: "riebeckite-publication-list",
     });
-    for (const row of rows) {
+    for (const row of rows.slice(0, this.visibleRows)) {
       const button = list.createEl("button", {
         text: `${row.title} · ${row.publication?.visibility ?? row.state}`,
         cls: "riebeckite-publication-row",
@@ -151,6 +159,15 @@ export class RiebeckitePublicationView extends ItemView {
         this.selectedPath = row.path;
         this.render();
         void this.loadDiagnosticSummary(row.path);
+        void this.loadImpact(row.path);
+      };
+    }
+    if (rows.length > this.visibleRows) {
+      list.createEl("button", {
+        text: `Show ${Math.min(100, rows.length - this.visibleRows)} more (${rows.length - this.visibleRows} remaining)`,
+      }).onclick = () => {
+        this.visibleRows += 100;
+        this.render();
       };
     }
     const selected = this.selectedPath
@@ -181,8 +198,15 @@ export class RiebeckitePublicationView extends ItemView {
       ["Revision", String(publication.revision)],
       ["Reasons", publication.reasons.join("; ")],
       ["Diagnostics", this.diagnosticSummaries.get(row.path) ?? "not loaded"],
+      ["SEO", seoStatus(publication)],
     ]) {
       details.createEl("p", { text: `${label}: ${value}` });
+    }
+    const impact = this.impacts.get(row.path);
+    if (impact) {
+      details.createEl("p", {
+        text: `Last build impact: ${impact.affectedOutputs.length} changed, ${impact.unchangedOutputs.length} unchanged, ${impact.removedOutputs.length} removed (${impact.completeness}).`,
+      });
     }
     if (publication.redirects.length) {
       details.createEl("p", {
@@ -204,6 +228,94 @@ export class RiebeckitePublicationView extends ItemView {
       actions.createEl("button", { text: "Open development preview" }).onclick =
         () => void this.openDevelopmentPreview(row.path);
     }
+    this.renderMutation(
+      details,
+      row.path,
+      publication.visibility,
+      publication.publishAt,
+    );
+  }
+
+  private renderMutation(
+    container: HTMLElement,
+    path: string,
+    visibility: string,
+    publishAt: string | null,
+  ): void {
+    const section = container.createDiv({
+      cls: "riebeckite-publication-mutation",
+    });
+    section.createEl("h6", { text: "Reviewed frontmatter edit" });
+    const visibilityInput = section.createEl("select", {
+      attr: { "aria-label": "Visibility" },
+    });
+    for (const value of ["public", "unlisted", "draft", "scheduled"]) {
+      const option = visibilityInput.createEl("option", { text: value, value });
+      option.selected = value === visibility;
+    }
+    const publishAtInput = section.createEl("input", {
+      type: "text",
+      value: publishAt ?? "",
+      placeholder: "Publish at (ISO 8601)",
+      attr: { "aria-label": "Publish at" },
+    });
+    section.createEl("button", { text: "Create review plan" }).onclick = () =>
+      void this.planMutation(path, visibilityInput.value, publishAtInput.value);
+    const current = this.mutationPlan;
+    if (current?.path === path) {
+      section.createEl("p", {
+        text: `Plan ${current.plan.id}: ${current.plan.changes.length} change(s), ${current.plan.warnings.length} warning(s).`,
+      });
+      if (current.plan.warnings.length)
+        section.createEl("pre", {
+          text: JSON.stringify(current.plan.warnings, null, 2),
+        });
+      section.createEl("button", { text: "Apply approved plan" }).onclick =
+        () => void this.applyMutation(current.plan.id);
+    }
+    if (this.mutationMessage)
+      section.createEl("p", { text: this.mutationMessage });
+  }
+
+  private async planMutation(
+    path: string,
+    visibility: string,
+    publishAt: string,
+  ): Promise<void> {
+    const result = await this.plugin.editor.planFrontmatter(
+      path,
+      {
+        visibility,
+        ...(publishAt.trim() ? { publishAt: publishAt.trim() } : {}),
+      },
+      publishAt.trim() ? [] : ["publishAt"],
+    );
+    if (result.kind === "resolved") {
+      this.mutationPlan = { path, plan: result.value };
+      this.mutationMessage =
+        "Review the plan, then approve it outside Obsidian before applying.";
+    } else {
+      this.mutationMessage = mutationMessage(result.kind);
+    }
+    this.render();
+  }
+
+  private async applyMutation(planId: string): Promise<void> {
+    const result = await this.plugin.editor.applyMutation(planId);
+    if (result.kind === "resolved" && result.value.applied) {
+      this.mutationPlan = undefined;
+      this.mutationMessage = "Approved plan applied.";
+      await this.refreshFileByPath(this.selectedPath ?? "");
+    } else if (result.kind === "resolved") {
+      this.mutationMessage = result.value.conflicts.some(
+        (conflict) => conflict.code === "approval-required",
+      )
+        ? "Server-side approval is required before this plan can be applied."
+        : "The server rejected this plan.";
+    } else {
+      this.mutationMessage = mutationMessage(result.kind);
+    }
+    this.render();
   }
 
   private async refreshFileByPath(path: string): Promise<void> {
@@ -223,7 +335,7 @@ export class RiebeckitePublicationView extends ItemView {
     if (request !== this.diagnosticRequest || path !== this.selectedPath)
       return;
     this.diagnosticSummaries.set(
-      path,
+      this.plugin.bridgeSource(path) ?? "",
       result.kind === "resolved"
         ? result.value.length
           ? `${result.value.length} issue(s)`
@@ -232,6 +344,14 @@ export class RiebeckitePublicationView extends ItemView {
           ? "unavailable"
           : "not available",
     );
+    this.render();
+  }
+
+  private async loadImpact(path: string): Promise<void> {
+    if (!this.plugin.editor.supports("build-impact")) return;
+    const result = await this.plugin.editor.impact(path);
+    if (path !== this.selectedPath || result.kind !== "resolved") return;
+    this.impacts.set(path, result.value);
     this.render();
   }
 
@@ -250,6 +370,23 @@ export class RiebeckitePublicationView extends ItemView {
     if (result.kind === "resolved" && result.page.routable)
       window.open(result.previewUrl, "_blank", "noopener");
   }
+}
+
+function seoStatus(
+  publication: NonNullable<PublicationRow["publication"]>,
+): string {
+  if (!publication.discoverable) return "not indexed";
+  return publication.canonicalUrl
+    ? "indexable; canonical URL available"
+    : "indexable";
+}
+
+function mutationMessage(kind: string): string {
+  return kind === "unauthorized"
+    ? "The Bridge mutation token was rejected."
+    : kind === "unavailable"
+      ? "Frontmatter mutations are unavailable. Configure a mutation token and connect to the Bridge."
+      : "The Bridge returned an invalid mutation response.";
 }
 
 const filters: readonly { value: PublicationFilter; label: string }[] = [

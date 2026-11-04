@@ -5,11 +5,13 @@ import {
   requestUrl,
   type WorkspaceLeaf,
 } from "obsidian";
+import type { BridgeDiagnostic } from "./bridge/bridge-client";
 import {
   BridgeClient,
   type BridgeConnectionState,
 } from "./bridge/bridge-client";
 import { EditorApi } from "./bridge/editor-api";
+import { diagnosticDecorations } from "./diagnostics/diagnostic-decorations";
 import {
   diagnosticsViewType,
   RiebeckiteDiagnosticsView,
@@ -21,7 +23,9 @@ import {
   RiebeckitePublicationView,
 } from "./publication/publication-view";
 import {
+  activeProfile,
   defaultSettings,
+  mapVaultPath,
   parseSettings,
   type RiebeckiteSettings,
 } from "./settings/settings";
@@ -33,8 +37,16 @@ export default class RiebeckitePlugin extends Plugin {
   readonly bridge = this.resources.add(
     new BridgeClient((input) => requestUrl(input)),
   );
-  readonly editor = new EditorApi(this.bridge, () => this.settings.bridgeToken);
+  readonly editor = new EditorApi(
+    this.bridge,
+    () =>
+      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
+    () => activeProfile(this.settings)?.mutationToken,
+    (path) => mapVaultPath(activeProfile(this.settings), path),
+  );
   private refreshTimer: number | undefined;
+  private reconnect = false;
+  private readonly diagnostics = new Map<string, readonly BridgeDiagnostic[]>();
 
   async onload(): Promise<void> {
     try {
@@ -43,6 +55,12 @@ export default class RiebeckitePlugin extends Plugin {
       this.registerView(
         previewViewType,
         (leaf) => new RiebeckitePreviewView(leaf, this),
+      );
+      this.registerEditorExtension(
+        diagnosticDecorations(() => {
+          const path = this.app.workspace.getActiveFile()?.path;
+          return path ? (this.diagnostics.get(path) ?? []) : [];
+        }),
       );
       this.registerView(
         publicationViewType,
@@ -59,6 +77,9 @@ export default class RiebeckitePlugin extends Plugin {
       );
       this.registerEvent(
         this.app.vault.on("modify", () => this.scheduleRefreshViews()),
+      );
+      this.registerInterval(
+        window.setInterval(() => void this.refreshBridgeStatus(), 5_000),
       );
       this.addCommand({
         id: "open-settings",
@@ -100,6 +121,7 @@ export default class RiebeckitePlugin extends Plugin {
         name: "Disconnect from Riebeckite",
         callback: () => {
           this.bridge.disconnect();
+          this.reconnect = false;
           void this.refreshViews();
           new Notice("Disconnected from Riebeckite.");
         },
@@ -123,23 +145,85 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async updateSettings(settings: Partial<RiebeckiteSettings>): Promise<void> {
-    this.settings = parseSettings({ ...this.settings, ...settings });
+    const current = activeProfile(this.settings);
+    const profiles = current
+      ? this.settings.profiles.map((profile) =>
+          profile.id === current.id
+            ? {
+                ...profile,
+                ...(typeof settings.serverUrl === "string"
+                  ? { serverUrl: settings.serverUrl }
+                  : {}),
+                ...(typeof settings.bridgeToken === "string"
+                  ? { bridgeToken: settings.bridgeToken }
+                  : {}),
+              }
+            : profile,
+        )
+      : this.settings.profiles;
+    this.settings = parseSettings({ ...this.settings, ...settings, profiles });
     await this.saveData(this.settings);
   }
 
-  async connectBridge(): Promise<BridgeConnectionState> {
+  async connectBridge(silent = false): Promise<BridgeConnectionState> {
+    const profile = activeProfile(this.settings);
     const state = await this.bridge.connect(
-      this.settings.serverUrl,
-      this.settings.bridgeToken,
+      profile?.serverUrl ?? this.settings.serverUrl,
+      profile?.bridgeToken ?? this.settings.bridgeToken,
     );
-    if (state.kind === "connected") await this.refreshViews();
-    new Notice(connectionMessage(state));
+    if (state.kind === "connected") {
+      this.reconnect = true;
+      await this.refreshViews();
+    }
+    if (state.kind === "connected") {
+      const profile = activeProfile(this.settings);
+      const identity = state.status.identity;
+      if (profile && identity) {
+        await this.updateSettings({
+          profiles: this.settings.profiles.map((candidate) =>
+            candidate.id === profile.id
+              ? {
+                  ...candidate,
+                  siteId: identity.siteId,
+                  contentRootId: identity.contentRootId,
+                  capabilityState: state.status.capabilities,
+                }
+              : candidate,
+          ),
+        });
+      }
+    }
+    if (!silent) new Notice(connectionMessage(state));
     return state;
   }
 
   async checkBridge(): Promise<BridgeConnectionState> {
     this.bridge.disconnect();
     return await this.connectBridge();
+  }
+
+  bridgeSource(path: string): string | undefined {
+    return mapVaultPath(activeProfile(this.settings), path);
+  }
+
+  setDiagnostics(path: string, diagnostics: readonly BridgeDiagnostic[]): void {
+    this.diagnostics.set(path, diagnostics);
+  }
+
+  private async refreshBridgeStatus(): Promise<void> {
+    if (!this.reconnect) return;
+    const profile = activeProfile(this.settings);
+    const token = profile?.bridgeToken ?? this.settings.bridgeToken;
+    const previousRevision = this.bridge.getRevision();
+    const state =
+      this.bridge.getState().kind === "connected"
+        ? await this.bridge.refreshStatus(token)
+        : await this.connectBridge(true);
+    if (
+      state.kind === "connected" &&
+      state.status.development.revision !== previousRevision
+    )
+      await this.refreshViews();
   }
 
   private openSettings(): void {
@@ -199,10 +283,15 @@ export default class RiebeckitePlugin extends Plugin {
   private async openCurrentPreviewInBrowser(): Promise<void> {
     const file = this.app.workspace.getActiveFile();
     if (!file || this.bridge.getState().kind !== "connected") return;
+    const source = this.bridgeSource(file.path);
+    if (!source) {
+      new Notice("This note is outside the profile's mapped vault folder.");
+      return;
+    }
     const result = await this.bridge.resolvePage(
-      this.settings.serverUrl,
-      this.settings.bridgeToken,
-      file.path,
+      activeProfile(this.settings)?.serverUrl ?? this.settings.serverUrl,
+      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
+      source,
     );
     if (result.kind === "resolved" && result.page.routable) {
       window.open(result.previewUrl, "_blank", "noopener");

@@ -80,6 +80,7 @@ export class RiebeckiteDiagnosticsView extends ItemView {
         revision: result.revision,
       };
     } else {
+      this.plugin.setDiagnostics(file.path, result.value);
       this.state = result.value.length
         ? {
             kind: "ready",
@@ -169,6 +170,14 @@ export class RiebeckiteDiagnosticsView extends ItemView {
     if (!path) return;
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile)
-      await this.app.workspace.getLeaf(false).openFile(file);
+      await this.app.workspace.getLeaf(false).openFile(file, {
+        eState:
+          diagnostic.source?.line === undefined
+            ? undefined
+            : {
+                line: Math.max(0, diagnostic.source.line - 1),
+                column: Math.max(0, (diagnostic.source.column ?? 1) - 1),
+              },
+      });
   }
 }

@@ -255,6 +255,100 @@ test("keeps no-source diagnostics readable when optional fields are omitted", as
   });
 });
 
+test("refreshes a connected Bridge status without bootstrapping again", async () => {
+  let revision = 1;
+  const requests: string[] = [];
+  const client = new BridgeClient(async (input) => {
+    requests.push(input.url);
+    return input.url.endsWith("/bootstrap")
+      ? response({ origin: "http://127.0.0.1:4567" })
+      : response({
+          ...connectedStatus,
+          development: { ...connectedStatus.development, revision: revision++ },
+        });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const state = await client.refreshStatus("a".repeat(32));
+
+  assert.equal(state.kind, "connected");
+  assert.equal(
+    state.kind === "connected" && state.status.development.revision,
+    2,
+  );
+  assert.equal(requests.filter((url) => url.endsWith("/bootstrap")).length, 1);
+});
+
+test("reads build impact only when advertised by the Bridge", async () => {
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1"))
+      return response({ ...connectedStatus, capabilities: ["build-impact"] });
+    return response({
+      status: "resolved",
+      impact: {
+        completeness: "complete",
+        affectedOutputs: [{ path: "hello/index.html" }],
+        unchangedOutputs: [],
+        removedOutputs: [],
+        fullRegenerationRequired: false,
+      },
+      revision: 1,
+    });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+  const result = await client.inspectImpact("a".repeat(32), "notes/hello.md");
+  assert.equal(result.kind, "resolved");
+  assert.equal(
+    result.kind === "resolved" && result.value.affectedOutputs[0]?.path,
+    "hello/index.html",
+  );
+});
+
+test("submits reviewed mutation plans with both Bridge tokens", async () => {
+  let mutationRequest: Parameters<BridgeRequest>[0] | undefined;
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1")) return response(connectedStatus);
+    mutationRequest = input;
+    return response({ id: "plan", changes: [], warnings: [] });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const result = await client.planFrontmatter(
+    "a".repeat(32),
+    "b".repeat(32),
+    "notes/hello.md",
+    { visibility: "draft" },
+    [],
+  );
+
+  assert.equal(result.kind, "resolved");
+  assert.equal(
+    mutationRequest?.headers["x-riebeckite-bridge-token"],
+    "a".repeat(32),
+  );
+  assert.equal(
+    mutationRequest?.headers["x-riebeckite-bridge-mutation-token"],
+    "b".repeat(32),
+  );
+  assert.equal(
+    mutationRequest?.body,
+    JSON.stringify({
+      operations: [
+        {
+          kind: "frontmatter",
+          path: "notes/hello.md",
+          set: { visibility: "draft" },
+          remove: [],
+        },
+      ],
+    }),
+  );
+});
+
 function response(json: unknown, status = 200) {
   return { status, json } as Awaited<ReturnType<BridgeRequest>>;
 }
