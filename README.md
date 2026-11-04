@@ -2,17 +2,17 @@
 
 Riebeckite connects Obsidian to a local
 [Riebeckite](https://github.com/Rerurate514/riebeckite) development server. It
-reads Bridge data only; it does not publish notes or change vault data.
+reads Bridge data and can submit explicitly reviewed, server-approved frontmatter edits.
 
 日本語版: [README_ja.md](./README_ja.md)
 
 ## Status
 
 Bridge Protocol v1 provides connection status, resolved page status, a Live
-Preview side pane, Publication Manager, and Document Diagnostics. The preview
+Preview side pane, Publication Manager, and Document Diagnostics. Connection
+profiles support integrated and separately mapped content roots. The preview
 pane displays the actual local HonoX development page; Obsidian does not render
-Markdown itself. This plugin is read-only: publication changes and quick fixes
-remain unavailable pending the Safe Mutation API.
+Markdown itself. Publication data refreshes when the Bridge revision changes.
 
 ## Connect to Riebeckite
 
@@ -27,7 +27,11 @@ remain unavailable pending the Safe Mutation API.
    search operate on that local result set and do not issue requests per key.
 6. Run **Riebeckite: Open Document Diagnostics** to inspect the active note.
    `No issues` is shown only after a successful empty response; unavailable
-   server data is shown separately.
+    server data is shown separately.
+7. To edit publication frontmatter, set the separate **Bridge mutation token**
+   in the active profile. In Publication Manager, create and review a plan, have
+   it approved by the server-side approval workflow, then select **Apply approved
+   plan**. Obsidian cannot approve plans and never receives the approval secret.
 
 Only `localhost`, `127.0.0.0/8`, and `::1` URLs are accepted. The Bridge is
 disabled unless its token is supplied, binds to loopback only, and accepts no
@@ -86,8 +90,9 @@ pnpm build:release
    commands appear only once.
 6. On a server advertising `publication` and `diagnostics`, open both views and
    confirm Public, Draft, Scheduled, and Unlisted data agrees with Riebeckite.
-   Confirm a non-routable note has no development-preview action, filters and
-   search do not trigger new requests, and a diagnostic opens only a vault file.
+    Confirm a non-routable note has no development-preview action, filters and
+    search do not trigger new requests, diagnostics mark valid source positions,
+    and a diagnostic opens only a vault file.
 
 ## Bridge capabilities and limits
 
@@ -98,13 +103,13 @@ implementation uses the server's `visibility`, routing, discovery, public
 location, reasons, and revision directly; it never derives a URL from a file
 name.
 
-The server currently provides optional line and column fields without a
-documented indexing convention. Diagnostics therefore open the verified vault
-file but do not move the cursor or decorate the editor. This avoids incorrect
-locations for Unicode text and stale revisions. Editor decorations, cursor
-navigation, SSE updates, and Safe Mutation operations are **UNVERIFIED / not
-implemented** until the Bridge contract defines stable ranges and revision
-semantics. Use Refresh after a site rebuild or reconnect.
+Diagnostics with valid 1-based source positions mark the editor and open the
+verified vault file at that location. The plugin polls Bridge status every five
+seconds while connected and refreshes views when its revision changes. Vault
+scans use four workers and render the first 100 notes at a time. Safe Mutation
+is limited to frontmatter visibility and publish-time edits, requires both
+Bridge tokens, and still requires a separate, short-lived server-side approval.
+Real Obsidian E2E verification remains required before release.
 
 ## Release
 
