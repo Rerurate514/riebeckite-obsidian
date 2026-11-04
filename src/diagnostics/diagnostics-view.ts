@@ -80,6 +80,7 @@ export class RiebeckiteDiagnosticsView extends ItemView {
         revision: result.revision,
       };
     } else {
+      this.plugin.setDiagnostics(file.path, result.value);
       this.state = result.value.length
         ? {
             kind: "ready",

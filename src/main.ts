@@ -5,11 +5,13 @@ import {
   requestUrl,
   type WorkspaceLeaf,
 } from "obsidian";
+import type { BridgeDiagnostic } from "./bridge/bridge-client";
 import {
   BridgeClient,
   type BridgeConnectionState,
 } from "./bridge/bridge-client";
 import { EditorApi } from "./bridge/editor-api";
+import { diagnosticDecorations } from "./diagnostics/diagnostic-decorations";
 import {
   diagnosticsViewType,
   RiebeckiteDiagnosticsView,
@@ -43,6 +45,7 @@ export default class RiebeckitePlugin extends Plugin {
   );
   private refreshTimer: number | undefined;
   private reconnect = false;
+  private readonly diagnostics = new Map<string, readonly BridgeDiagnostic[]>();
 
   async onload(): Promise<void> {
     try {
@@ -51,6 +54,12 @@ export default class RiebeckitePlugin extends Plugin {
       this.registerView(
         previewViewType,
         (leaf) => new RiebeckitePreviewView(leaf, this),
+      );
+      this.registerEditorExtension(
+        diagnosticDecorations(() => {
+          const path = this.app.workspace.getActiveFile()?.path;
+          return path ? (this.diagnostics.get(path) ?? []) : [];
+        }),
       );
       this.registerView(
         publicationViewType,
@@ -194,6 +203,10 @@ export default class RiebeckitePlugin extends Plugin {
 
   bridgeSource(path: string): string | undefined {
     return mapVaultPath(activeProfile(this.settings), path);
+  }
+
+  setDiagnostics(path: string, diagnostics: readonly BridgeDiagnostic[]): void {
+    this.diagnostics.set(path, diagnostics);
   }
 
   private async refreshBridgeStatus(): Promise<void> {
