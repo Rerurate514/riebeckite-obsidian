@@ -92,7 +92,7 @@ export class DevServerController {
       );
       void this.stop();
     }, 30_000);
-    const child = spawn(process.execPath, [command, "dev"], {
+    const child = spawn("node", [command, "dev"], {
       cwd: projectDirectory,
       env: {
         ...process.env,

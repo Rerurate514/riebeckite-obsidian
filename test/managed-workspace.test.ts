@@ -17,7 +17,7 @@ const [controller, workspace, main] = await Promise.all(
 test("managed development uses a runtime environment token without CLI exposure", () => {
   assert.match(controller, /RIEBECKITE_BRIDGE_TOKEN: this\.token/);
   assert.match(controller, /RIEBECKITE_MANAGED_DEV_CONTROL_FD: "3"/);
-  assert.match(controller, /spawn\(process\.execPath, \[command, "dev"\]/);
+  assert.match(controller, /spawn\("node", \[command, "dev"\]/);
   assert.match(controller, /stdio: \["ignore", "pipe", "pipe", "pipe"\]/);
   assert.doesNotMatch(controller, /bridge-token/);
   assert.match(controller, /child\.stdio\[3\].*on\("data"/);
