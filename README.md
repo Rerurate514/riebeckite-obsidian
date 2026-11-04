@@ -22,7 +22,25 @@ selection, and do not apply mutations automatically.
 Publication Manager also displays the SEO title, description, canonical URL,
 indexability, and issues reported by the Bridge.
 
-## Connect to Riebeckite
+## Managed development (Desktop)
+
+Run **Riebeckite: Open**, select a profile, set its **Site project directory**,
+then select **Start Dev**. The plugin runs only that project's local
+`node_modules/.bin/riebeckite` executable with `dev`; it never runs an npm
+script. The first start asks for confirmation.
+
+Each managed process receives a temporary, read-only Bridge pairing token through
+its environment. The token is not saved, passed as a command-line argument, put
+in a URL, or written to the plugin log. Processes running as the same user can
+inspect each other's environment, so use a dedicated local development account
+where that is a concern. Start Dev does not grant Mutation access.
+
+Stop and Restart affect only the process started by this plugin (and its Windows
+PID tree). The site directory is independent of Integrated, Separate, and Custom
+Vault mappings. The tabs show the active note's preview, publication,
+diagnostics, build impact, and SEO data.
+
+## Connect to an external Riebeckite server
 
 1. Start the site with an explicit, unique pairing token (at least 32 characters):
    `riebeckite dev --bridge-token <token>`.

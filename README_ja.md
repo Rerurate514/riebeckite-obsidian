@@ -18,7 +18,22 @@ revision更新ではプラグインのViewだけを更新するため、編集�
 Mutationも自動適用しません。Publication ManagerはBridgeが返すSEOのtitle、description、canonical URL、indexable、issuesも
 表示します。
 
-## Riebeckiteへの接続
+## 管理された開発（Desktop）
+
+**Riebeckite: Open** を実行し、プロファイルを選び、**Site project directory** を設定してから
+**Start Dev** を選びます。プラグインが実行するのは、そのプロジェクトにあるローカルの
+`node_modules/.bin/riebeckite` の `dev` だけで、npm scriptは実行しません。初回の起動時には確認を求めます。
+
+管理されたプロセスには、読み取り専用Bridge用の一時的なペアリングトークンを環境変数で渡します。
+トークンは保存せず、コマンドライン引数・URL・プラグインログにも出力しません。同じユーザーで動く
+プロセスは互いの環境変数を参照できるため、問題になる場合はローカル開発用の専用アカウントを使ってください。
+Start DevでMutation権限が付与されることはありません。
+
+StopとRestartは、このプラグインが起動したプロセスだけ（WindowsではそのPIDツリー）を対象にします。
+Site project directoryはIntegrated・Separate・CustomのVaultマッピングとは独立しています。タブでは
+アクティブノートのPreview、Publication、Diagnostics、Build Impact、SEOを確認できます。
+
+## 外部 Riebeckite サーバーへの接続
 
 1. 32文字以上の一意なペアリングトークンを指定してサイトを起動します。
    `riebeckite dev --bridge-token <token>`
