@@ -19,20 +19,21 @@ function bodyOf(
   return source.slice(start, end);
 }
 
-test("plugin starts polling from onload", () => {
+test("plugin does not connect before managed development is ready", () => {
   const onload = bodyOf(mainSource, "async onload()", "onunload()");
-  assert.match(onload, /this\.polling\.start\(\)/);
+  assert.doesNotMatch(onload, /connectBridge/);
+  assert.doesNotMatch(onload, /polling\.start/);
 });
 
-test("profile switch stops the previous polling before changing settings", () => {
-  const switchProfile = bodyOf(
+test("site switch stops the managed process before changing settings", () => {
+  const switchSite = bodyOf(
     mainSource,
-    "async switchProfile(",
-    "disconnectBridge(",
+    "async switchSite(",
+    "async removeSite(",
   );
-  const stop = switchProfile.indexOf("this.polling.stop()");
-  const update = switchProfile.indexOf("await this.updateSettings(");
+  const stop = switchSite.indexOf("await this.stopDev()");
+  const update = switchSite.indexOf("await this.updateSettings(");
 
-  assert.ok(stop >= 0, "switchProfile must stop polling");
-  assert.ok(stop < update, "polling must stop before the profile changes");
+  assert.ok(stop >= 0, "switchSite must stop the managed process");
+  assert.ok(stop < update, "the process must stop before the site changes");
 });
