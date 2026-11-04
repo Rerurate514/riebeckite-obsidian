@@ -11,7 +11,10 @@ import {
   type BridgeConnectionState,
 } from "./bridge/bridge-client";
 import { EditorApi } from "./bridge/editor-api";
-import { diagnosticDecorations } from "./diagnostics/diagnostic-decorations";
+import {
+  diagnosticDecorations,
+  refreshDiagnosticDecorations,
+} from "./diagnostics/diagnostic-decorations";
 import {
   diagnosticsViewType,
   RiebeckiteDiagnosticsView,
@@ -263,6 +266,7 @@ export default class RiebeckitePlugin extends Plugin {
 
   setDiagnostics(path: string, diagnostics: readonly BridgeDiagnostic[]): void {
     this.diagnostics.set(path, diagnostics);
+    refreshDiagnosticDecorations();
   }
 
   private async refreshBridgeStatus(): Promise<void> {
@@ -326,6 +330,7 @@ export default class RiebeckitePlugin extends Plugin {
     if (this.refreshTimer !== undefined) window.clearTimeout(this.refreshTimer);
     this.refreshTimer = window.setTimeout(() => {
       this.refreshTimer = undefined;
+      refreshDiagnosticDecorations();
       void this.refreshViews();
     }, 150);
   }

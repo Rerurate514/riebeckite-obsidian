@@ -117,12 +117,18 @@ location, reasons, and revision directly; it never derives a URL from a file
 name.
 
 Diagnostics with valid 1-based source positions mark the editor and open the
-verified vault file at that location. The plugin polls Bridge status every five
-seconds while connected and refreshes views when its revision changes. Vault
-scans use four workers and render the first 100 notes at a time. Safe Mutation
-is limited to frontmatter visibility and publish-time edits, requires both
-Bridge tokens, and still requires a separate, short-lived server-side approval.
-Real Obsidian E2E verification remains required before release.
+verified vault file at that location. Markers show severity and message on
+hover, rebuild when their contents change, and clamp grapheme-based columns to
+their source line. The diagnostics list replaces its DOM on each refresh and
+ignores responses that arrive after a newer refresh or close. Decoration
+construction is linear apart from one position sort and is verified against
+10,000 diagnostics; very large result sets still render one control per
+diagnostic. The plugin polls Bridge status every five seconds while connected
+and refreshes views when its revision changes. Vault scans use four workers and
+render the first 100 notes at a time. Safe Mutation is limited to frontmatter
+visibility and publish-time edits, requires both Bridge tokens, and still
+requires a separate, short-lived server-side approval. Real Obsidian E2E
+verification remains required before release.
 
 ## Release
 

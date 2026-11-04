@@ -45,6 +45,7 @@ export class RiebeckiteDiagnosticsView extends ItemView {
   }
 
   async refresh(): Promise<void> {
+    const request = ++this.request;
     const file = this.app.workspace.getActiveFile();
     if (file?.extension !== "md") {
       this.path = undefined;
@@ -63,7 +64,6 @@ export class RiebeckiteDiagnosticsView extends ItemView {
       this.render("Diagnostics are unavailable on this server.");
       return;
     }
-    const request = ++this.request;
     this.state = { kind: "loading" };
     this.render();
     const result = await this.plugin.editor.diagnostics(file.path);
@@ -90,6 +90,12 @@ export class RiebeckiteDiagnosticsView extends ItemView {
         : { kind: "no-issues", revision: result.revision };
     }
     this.render();
+  }
+
+  onClose(): Promise<void> {
+    this.request++;
+    this.path = undefined;
+    return Promise.resolve();
   }
 
   private render(message?: string): void {
