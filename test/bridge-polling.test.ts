@@ -42,7 +42,7 @@ class FakeTimers {
   }
 }
 
-test("polling retries with a capped exponential backoff", async () => {
+test("polling retries with a capped exponential backoff and resets on reconnect", async () => {
   const timers = new FakeTimers();
   const results: BridgePollingResult[] = [
     "unavailable",
@@ -51,6 +51,7 @@ test("polling retries with a capped exponential backoff", async () => {
     "incompatible",
     "unavailable",
     "unavailable",
+    "connected",
   ];
   const polling = new BridgePolling(
     async () => results.shift() ?? "unavailable",
@@ -58,16 +59,19 @@ test("polling retries with a capped exponential backoff", async () => {
   );
 
   polling.start();
-  const delays = [timers.activeDelays()[0]];
+  assert.deepEqual(timers.activeDelays(), [5_000]);
+
+  const retries: number[] = [];
   for (let index = 0; index < 6; index += 1) {
     await timers.runNext();
-    delays.push(timers.activeDelays()[0]);
+    const [delay] = timers.activeDelays();
+    assert.ok(delay !== undefined, "expected a retry timer");
+    retries.push(delay);
   }
+  assert.deepEqual(retries, [5_000, 10_000, 20_000, 40_000, 60_000, 60_000]);
 
-  assert.deepEqual(
-    delays,
-    [5_000, 5_000, 10_000, 20_000, 40_000, 60_000, 60_000],
-  );
+  await timers.runNext();
+  assert.deepEqual(timers.activeDelays(), [5_000]);
 });
 
 test("polling resets after reconnect and stops for rejected pairing", async () => {
@@ -83,6 +87,30 @@ test("polling resets after reconnect and stops for rejected pairing", async () =
   assert.deepEqual(timers.activeDelays(), [5_000]);
 
   await timers.runNext();
+  assert.deepEqual(timers.activeDelays(), []);
+});
+
+test("polling does not reschedule when stopped during a poll", async () => {
+  const timers = new FakeTimers();
+  let resolvePoll: ((result: BridgePollingResult) => void) | undefined;
+  const polling = new BridgePolling(
+    () =>
+      new Promise((resolve) => {
+        resolvePoll = resolve;
+      }),
+    timers.timers,
+  );
+
+  polling.start();
+  const timer = timers.scheduled[0];
+  assert.ok(timer);
+  timer.cleared = true;
+  timer.callback();
+  polling.stop();
+  resolvePoll?.("unavailable");
+  await Promise.resolve();
+  await Promise.resolve();
+
   assert.deepEqual(timers.activeDelays(), []);
 });
 

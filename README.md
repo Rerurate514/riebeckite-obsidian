@@ -13,11 +13,12 @@ Preview side pane, Publication Manager, and Document Diagnostics. Connection
 profiles support integrated and separately mapped content roots. The preview
 pane displays the actual local HonoX development page; Obsidian does not render
 Markdown itself. Publication data refreshes when the Bridge revision changes.
-While connected, status polling runs every five seconds; temporary connection
-failures retry after 5, 10, 20, 40, then at most 60 seconds. A rejected pairing
-does not retry automatically. Revision updates refresh the plugin views only, so
-they do not change the active editor text, cursor, or selection, and do not
-apply mutations automatically.
+Status polling starts when the plugin loads and checks every five seconds;
+temporary connection failures retry after 5, 10, 20, 40, then at most 60
+seconds, and a successful connection resets the interval to five seconds. A
+rejected pairing does not retry automatically. Revision updates refresh the
+plugin views only, so they do not change the active editor text, cursor, or
+selection, and do not apply mutations automatically.
 
 ## Connect to Riebeckite
 
@@ -36,11 +37,11 @@ apply mutations automatically.
    search operate on that local result set and do not issue requests per key.
 7. Run **Riebeckite: Open Document Diagnostics** to inspect the active note.
    `No issues` is shown only after a successful empty response; unavailable
-    server data is shown separately.
+   server data is shown separately.
 8. To edit publication frontmatter, set the separate **Bridge mutation token**
    in the active profile. In Publication Manager, create and review a plan, have
    it approved by the server-side approval workflow, then select **Apply approved
-    plan**. Obsidian cannot approve plans and never receives the approval secret.
+   plan**. Obsidian cannot approve plans and never receives the approval secret.
 
 Integrated profiles require only the server URL and pairing token. Separate local
 and Git profiles additionally configure one Vault folder and content root. Custom
@@ -108,9 +109,9 @@ pnpm build:release
    commands appear only once.
 6. On a server advertising `publication` and `diagnostics`, open both views and
    confirm Public, Draft, Scheduled, and Unlisted data agrees with Riebeckite.
-    Confirm a non-routable note has no development-preview action, filters and
-    search do not trigger new requests, diagnostics mark valid source positions,
-    and a diagnostic opens only a vault file.
+   Confirm a non-routable note has no development-preview action, filters and
+   search do not trigger new requests, diagnostics mark valid source positions
+   in the editor, and a diagnostic opens only a vault file.
 
 ## Bridge capabilities and limits
 
@@ -128,13 +129,15 @@ their source line. The diagnostics list replaces its DOM on each refresh and
 ignores responses that arrive after a newer refresh or close. Decoration
 construction is linear apart from one position sort and is verified against
 10,000 diagnostics; very large result sets still render one control per
-diagnostic. The plugin polls Bridge status every five seconds while connected
-and refreshes views when its revision changes. Temporary failures retry with a
-5-to-60-second exponential backoff; rejected pairing stops automatic retries.
-These refreshes do not alter editor input or automatically apply mutations.
-Vault scans use four workers and render the first 100 notes at a time. Safe Mutation is limited to frontmatter
-visibility and publish-time edits, requires both Bridge tokens, and still
-requires a separate, short-lived server-side approval. Real Obsidian E2E
+diagnostic. The plugin polls Bridge status from startup and every five seconds
+thereafter, and refreshes views when its revision changes. Temporary failures
+retry with a 5-to-60-second exponential backoff; a successful connection resets
+the interval, and rejected pairing stops automatic retries. These refreshes do
+not alter editor input, cursor, or selection, and do not automatically apply
+mutations. Vault scans use four
+workers and render the first 100 notes at a time. Safe Mutation is limited to
+frontmatter visibility and publish-time edits, requires both Bridge tokens, and
+still requires a separate, short-lived server-side approval. Real Obsidian E2E
 verification remains required before release.
 
 ## Release

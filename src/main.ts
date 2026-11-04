@@ -131,9 +131,7 @@ export default class RiebeckitePlugin extends Plugin {
         id: "disconnect",
         name: "Disconnect from Riebeckite",
         callback: () => {
-          this.bridge.disconnect();
-          this.polling.stop();
-          void this.refreshViews();
+          this.disconnectBridge();
           new Notice("Disconnected from Riebeckite.");
         },
       });
@@ -142,6 +140,7 @@ export default class RiebeckitePlugin extends Plugin {
         name: "Check Riebeckite Connection",
         callback: () => void this.checkBridge(),
       });
+      this.polling.start();
     } catch (error) {
       console.error("Unable to load Riebeckite", error);
       new Notice(
@@ -184,6 +183,12 @@ export default class RiebeckitePlugin extends Plugin {
     await this.updateSettings({ activeProfileId: id });
     this.bridge.disconnect();
     await this.refreshViews();
+  }
+
+  disconnectBridge(): void {
+    this.bridge.disconnect();
+    this.polling.stop();
+    void this.refreshViews();
   }
 
   async connectBridge(silent = false): Promise<BridgeConnectionState> {
