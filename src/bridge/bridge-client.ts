@@ -97,7 +97,26 @@ export type BridgeRequest = (input: {
   method: string;
   headers: Record<string, string>;
   throw: boolean;
+  body?: string;
 }) => Promise<{ status: number; json: unknown }>;
+
+export type BridgeMutationPlan = {
+  id: string;
+  changes: readonly unknown[];
+  warnings: readonly unknown[];
+};
+
+export type BridgeMutationResult = {
+  planId: string;
+  applied: boolean;
+  conflicts: readonly { code: string }[];
+};
+
+export type BridgeMutationResponse<T> =
+  | { kind: "resolved"; value: T }
+  | { kind: "unauthorized" }
+  | { kind: "unavailable" }
+  | { kind: "error" };
 
 export class BridgeClient implements Disposable {
   private state: BridgeConnectionState = { kind: "disconnected" };
@@ -249,6 +268,77 @@ export class BridgeClient implements Disposable {
     source: string,
   ): Promise<BridgeInspectionResult<BridgeImpact>> {
     return this.inspect("impact", token, source, parseImpact);
+  }
+
+  planFrontmatter(
+    token: string,
+    mutationToken: string,
+    path: string,
+    set: Record<string, unknown>,
+    remove: readonly string[],
+  ): Promise<BridgeMutationResponse<BridgeMutationPlan>> {
+    return this.mutate(
+      "mutations/plan",
+      token,
+      mutationToken,
+      {
+        operations: [{ kind: "frontmatter", path, set, remove }],
+      },
+      parseMutationPlan,
+    );
+  }
+
+  applyMutation(
+    token: string,
+    mutationToken: string,
+    planId: string,
+  ): Promise<BridgeMutationResponse<BridgeMutationResult>> {
+    return this.mutate(
+      `mutations/${encodeURIComponent(planId)}/apply`,
+      token,
+      mutationToken,
+      {},
+      parseMutationResult,
+    );
+  }
+
+  private async mutate<T>(
+    endpoint: string,
+    token: string,
+    mutationToken: string,
+    body: Record<string, unknown>,
+    parse: (value: unknown) => T | undefined,
+  ): Promise<BridgeMutationResponse<T>> {
+    const origin = this.privateOrigin;
+    if (
+      this.disposed ||
+      !origin ||
+      token.length < 32 ||
+      mutationToken.length < 32
+    )
+      return { kind: "unavailable" };
+    const generation = this.generation;
+    try {
+      const response = await this.requestWithTimeout({
+        url: `${origin}/__riebeckite/bridge/v1/${endpoint}`,
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-riebeckite-bridge-token": token,
+          "x-riebeckite-bridge-protocol": "1",
+          "x-riebeckite-bridge-mutation-token": mutationToken,
+        },
+        body: JSON.stringify(body),
+        throw: false,
+      });
+      if (this.disposed || generation !== this.generation)
+        return { kind: "unavailable" };
+      if (response.status === 403) return { kind: "unauthorized" };
+      const value = response.status === 200 ? parse(response.json) : undefined;
+      return value ? { kind: "resolved", value } : { kind: "error" };
+    } catch {
+      return { kind: "unavailable" };
+    }
   }
 
   private async inspect<T>(
@@ -533,6 +623,33 @@ function parseImpact(value: Record<string, unknown>): BridgeImpact | undefined {
     unchangedOutputs: impact.unchangedOutputs as { path: string }[],
     removedOutputs: impact.removedOutputs as { path: string }[],
     fullRegenerationRequired: impact.fullRegenerationRequired,
+  };
+}
+
+function parseMutationPlan(value: unknown): BridgeMutationPlan | undefined {
+  return isRecord(value) &&
+    typeof value.id === "string" &&
+    Array.isArray(value.changes) &&
+    Array.isArray(value.warnings)
+    ? { id: value.id, changes: value.changes, warnings: value.warnings }
+    : undefined;
+}
+
+function parseMutationResult(value: unknown): BridgeMutationResult | undefined {
+  if (
+    !isRecord(value) ||
+    typeof value.planId !== "string" ||
+    typeof value.applied !== "boolean" ||
+    !Array.isArray(value.conflicts) ||
+    !value.conflicts.every(
+      (conflict) => isRecord(conflict) && typeof conflict.code === "string",
+    )
+  )
+    return undefined;
+  return {
+    planId: value.planId,
+    applied: value.applied,
+    conflicts: value.conflicts as { code: string }[],
   };
 }
 

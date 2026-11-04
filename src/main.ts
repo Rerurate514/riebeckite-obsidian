@@ -41,6 +41,7 @@ export default class RiebeckitePlugin extends Plugin {
     this.bridge,
     () =>
       activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
+    () => activeProfile(this.settings)?.mutationToken,
     (path) => mapVaultPath(activeProfile(this.settings), path),
   );
   private refreshTimer: number | undefined;

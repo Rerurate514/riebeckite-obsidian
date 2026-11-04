@@ -3,6 +3,9 @@ import type {
   BridgeDiagnostic,
   BridgeImpact,
   BridgeInspectionResult,
+  BridgeMutationPlan,
+  BridgeMutationResponse,
+  BridgeMutationResult,
   BridgePublication,
 } from "./bridge-client";
 
@@ -10,6 +13,7 @@ export class EditorApi {
   constructor(
     private readonly bridge: BridgeClient,
     private readonly token: () => string,
+    private readonly mutationToken: () => string | undefined,
     private readonly source: (path: string) => string | undefined = (path) =>
       path,
   ) {}
@@ -44,6 +48,33 @@ export class EditorApi {
     return this.inspect(source, (path) =>
       this.bridge.inspectImpact(this.token(), path),
     );
+  }
+
+  planFrontmatter(
+    source: string,
+    set: Record<string, unknown>,
+    remove: readonly string[],
+  ): Promise<BridgeMutationResponse<BridgeMutationPlan>> {
+    const path = this.source(source);
+    const mutationToken = this.mutationToken();
+    return path && mutationToken
+      ? this.bridge.planFrontmatter(
+          this.token(),
+          mutationToken,
+          path,
+          set,
+          remove,
+        )
+      : Promise.resolve({ kind: "unavailable" });
+  }
+
+  applyMutation(
+    planId: string,
+  ): Promise<BridgeMutationResponse<BridgeMutationResult>> {
+    const mutationToken = this.mutationToken();
+    return mutationToken
+      ? this.bridge.applyMutation(this.token(), mutationToken, planId)
+      : Promise.resolve({ kind: "unavailable" });
   }
 
   private inspect<T>(

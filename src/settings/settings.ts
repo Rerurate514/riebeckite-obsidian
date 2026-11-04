@@ -10,6 +10,7 @@ export type ConnectionProfile = {
   mode: ConnectionMode;
   serverUrl: string;
   bridgeToken: string;
+  mutationToken?: string;
   siteId?: string;
   contentRootId?: string;
   vaultFolder?: string;
@@ -124,11 +125,13 @@ function parseConnection(
   value: Record<string, unknown>,
 ): Omit<ConnectionProfile, "id" | "displayName" | "mode"> | undefined {
   const serverUrl = normalizeServerUrl(value.serverUrl);
+  const mutationToken = optionalString(value.mutationToken);
   return serverUrl
     ? {
         serverUrl,
         bridgeToken:
           typeof value.bridgeToken === "string" ? value.bridgeToken : "",
+        ...(mutationToken ? { mutationToken } : {}),
       }
     : undefined;
 }

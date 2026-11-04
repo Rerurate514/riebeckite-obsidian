@@ -156,6 +156,16 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
             }),
         );
     }
+    new Setting(containerEl)
+      .setName("Bridge mutation token")
+      .setDesc("Optional token for reviewed frontmatter mutation plans.")
+      .addText((text) =>
+        text
+          .setValue(profile.mutationToken ?? "")
+          .onChange(async (mutationToken) => {
+            await this.updateProfile({ mutationToken });
+          }),
+      );
   }
 
   private async updateProfile(
