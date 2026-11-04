@@ -19,16 +19,18 @@ export type BridgeStatus = {
     build: { status: "ready"; completedAt: number } | { status: "unavailable" };
   };
   inspection: { available: boolean };
-  identity?: {
-    siteId: string;
-    siteName: string;
-    contentRootId: string;
-    contentSourceKind:
-      | "integrated"
-      | "separate-local"
-      | "separate-git"
-      | "custom-mapping";
-  };
+  identity?: BridgeIdentity;
+};
+
+export type BridgeIdentity = {
+  siteId: string;
+  siteName: string;
+  contentRootId: string;
+  contentSourceKind:
+    | "integrated"
+    | "separate-local"
+    | "separate-git"
+    | "custom-mapping";
 };
 
 export type BridgePage = {

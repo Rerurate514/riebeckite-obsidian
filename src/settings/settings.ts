@@ -15,6 +15,12 @@ export type ConnectionProfile = {
   contentRootId?: string;
   vaultFolder?: string;
   capabilityState?: readonly string[];
+  contentMapping?: readonly ContentMapping[];
+};
+
+export type ContentMapping = {
+  vaultFolder: string;
+  contentRootId: string;
 };
 
 export interface RiebeckiteSettings {
@@ -76,9 +82,12 @@ export function mapVaultPath(
   const path = normalizeContentPath(vaultPath);
   if (!path) return undefined;
   if (!profile || profile.mode === "integrated") return path;
-  const folder = profile.vaultFolder;
-  return folder && path.startsWith(`${folder}/`)
-    ? path.slice(folder.length + 1)
+  const mapping = contentMappings(profile).find(
+    ({ vaultFolder }) =>
+      path === vaultFolder || path.startsWith(`${vaultFolder}/`),
+  );
+  return mapping && path !== mapping.vaultFolder
+    ? path.slice(mapping.vaultFolder.length + 1)
     : undefined;
 }
 
@@ -89,7 +98,8 @@ export function mapContentPath(
   const path = normalizeContentPath(contentPath);
   if (!path) return undefined;
   if (!profile || profile.mode === "integrated") return path;
-  return profile.vaultFolder ? `${profile.vaultFolder}/${path}` : undefined;
+  const mapping = contentMappings(profile)[0];
+  return mapping ? `${mapping.vaultFolder}/${path}` : undefined;
 }
 
 function parseProfile(value: unknown): ConnectionProfile[] {
@@ -117,8 +127,45 @@ function parseProfile(value: unknown): ConnectionProfile[] {
               typeof capability === "string",
           )
         : undefined,
+      contentMapping: parseContentMappings(record.contentMapping),
     },
   ];
+}
+
+function parseContentMappings(
+  value: unknown,
+): readonly ContentMapping[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((item) => {
+    if (typeof item !== "object" || item === null) return [];
+    const record = item as Record<string, unknown>;
+    return typeof record.vaultFolder === "string" &&
+      typeof record.contentRootId === "string"
+      ? [
+          {
+            vaultFolder: optionalVaultFolder(record.vaultFolder) ?? "",
+            contentRootId: record.contentRootId,
+          },
+        ]
+      : [];
+  });
+}
+
+function contentMappings(
+  profile: ConnectionProfile,
+): readonly ContentMapping[] {
+  if (profile.contentMapping?.length)
+    return profile.contentMapping.filter(
+      ({ vaultFolder }) => vaultFolder.length > 0,
+    );
+  return profile.vaultFolder
+    ? [
+        {
+          vaultFolder: profile.vaultFolder,
+          contentRootId: profile.contentRootId ?? "",
+        },
+      ]
+    : [];
 }
 
 function parseConnection(

@@ -1,12 +1,21 @@
-import { type App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { type App, PluginSettingTab, Setting, TFolder } from "obsidian";
 import type RiebeckitePlugin from "../main";
+import {
+  type ConnectionTestResult,
+  checkSiteIdentity,
+  contentMappings,
+  validateContentMappings,
+} from "./connection-validation";
 import {
   activeProfile,
   type ConnectionMode,
   type ConnectionProfile,
+  type ContentMapping,
 } from "./settings";
 
 export class RiebeckiteSettingsTab extends PluginSettingTab {
+  private connectionTest: ConnectionTestResult | undefined;
+
   constructor(
     app: App,
     private readonly plugin: RiebeckitePlugin,
@@ -32,6 +41,7 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
         }
         dropdown.setValue(profile?.id ?? "").onChange(async (id) => {
           await this.plugin.switchProfile(id);
+          this.connectionTest = undefined;
           this.display();
         });
       })
@@ -42,6 +52,7 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
             profiles: [...this.plugin.settings.profiles, created],
             activeProfileId: created.id,
           });
+          this.connectionTest = undefined;
           this.display();
         }),
       )
@@ -57,66 +68,11 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
             );
             await this.plugin.updateSettings({ profiles });
             await this.plugin.switchProfile(profiles[0]?.id ?? "");
+            this.connectionTest = undefined;
             this.display();
           }),
       );
     if (profile) this.displayProfile(profile);
-
-    new Setting(containerEl)
-      .setName("Riebeckite Server URL")
-      .setDesc("The local Riebeckite development server URL.")
-      .addText((text) =>
-        text
-          .setPlaceholder("http://127.0.0.1:3000")
-          .setValue(this.plugin.settings.serverUrl)
-          .onChange(async (serverUrl) => {
-            try {
-              await this.plugin.updateSettings({ serverUrl });
-            } catch (error) {
-              console.error("Unable to save Riebeckite settings", error);
-              new Notice("Riebeckite settings could not be saved.");
-              text.setValue(this.plugin.settings.serverUrl);
-            }
-          }),
-      );
-    new Setting(containerEl)
-      .setName("Bridge pairing token")
-      .setDesc("The token supplied to riebeckite dev --bridge-token.")
-      .addText((text) =>
-        text
-          .setValue(this.plugin.settings.bridgeToken)
-          .onChange(async (bridgeToken) => {
-            try {
-              await this.plugin.updateSettings({ bridgeToken });
-            } catch (error) {
-              console.error("Unable to save Riebeckite settings", error);
-              new Notice("Riebeckite settings could not be saved.");
-              text.setValue(this.plugin.settings.bridgeToken);
-            }
-          }),
-      );
-    const state = this.plugin.bridge.getState();
-    const description =
-      state.kind === "connected"
-        ? `Riebeckite ${state.status.server.version}; Protocol v${state.status.protocolVersion}; ${state.status.capabilities.join(", ")}.`
-        : state.kind === "disconnected" || state.kind === "connecting"
-          ? state.kind
-          : state.message;
-    new Setting(containerEl)
-      .setName("Connection Status")
-      .setDesc(description)
-      .addButton((button) =>
-        button.setButtonText("Connect").onClick(async () => {
-          await this.plugin.connectBridge();
-          this.display();
-        }),
-      )
-      .addButton((button) =>
-        button.setButtonText("Disconnect").onClick(() => {
-          this.plugin.bridge.disconnect();
-          this.display();
-        }),
-      );
   }
 
   private displayProfile(profile: ConnectionProfile): void {
@@ -140,28 +96,199 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
             this.display();
           }),
       );
-    if (profile.mode !== "integrated") {
-      new Setting(containerEl)
-        .setName("Vault folder")
-        .setDesc("Folder mapped to the Riebeckite content root.")
-        .addText((text) =>
-          text
-            .setValue(profile.vaultFolder ?? "")
-            .onChange(async (vaultFolder) => {
-              await this.updateProfile({ vaultFolder });
-            }),
-        );
+    this.displayConnection(profile);
+    if (profile.mode === "custom-mapping") {
+      this.displayCustomMappings(profile);
+    } else if (profile.mode !== "integrated") {
+      this.displayMapping(profile);
     }
+    this.displayMappingValidation();
+    this.displayConnectionStatus();
     new Setting(containerEl)
       .setName("Bridge mutation token")
       .setDesc("Optional token for reviewed frontmatter mutation plans.")
-      .addText((text) =>
-        text
+      .addText((text) => {
+        text.inputEl.type = "password";
+        return text
           .setValue(profile.mutationToken ?? "")
           .onChange(async (mutationToken) => {
             await this.updateProfile({ mutationToken });
-          }),
+          });
+      });
+  }
+
+  private displayConnection(profile: ConnectionProfile): void {
+    const { containerEl } = this;
+    new Setting(containerEl)
+      .setName("Riebeckite Server URL")
+      .setDesc("The local Riebeckite development server URL.")
+      .addText((text) =>
+        text
+          .setPlaceholder("http://127.0.0.1:3000")
+          .setValue(profile.serverUrl)
+          .onChange(async (serverUrl) => this.updateProfile({ serverUrl })),
       );
+    new Setting(containerEl)
+      .setName("Bridge pairing token")
+      .setDesc("The token supplied to riebeckite dev --bridge-token.")
+      .addText((text) => {
+        text.inputEl.type = "password";
+        return text
+          .setValue(profile.bridgeToken)
+          .onChange(async (bridgeToken) => this.updateProfile({ bridgeToken }));
+      });
+    new Setting(containerEl)
+      .setName("Test connection")
+      .setDesc(this.connectionTestDescription(profile))
+      .addButton((button) =>
+        button.setButtonText("Test connection").onClick(async () => {
+          button.setDisabled(true);
+          this.connectionTest = await this.plugin.testConnection();
+          this.display();
+        }),
+      );
+  }
+
+  private displayMapping(profile: ConnectionProfile): void {
+    const { containerEl } = this;
+    new Setting(containerEl)
+      .setName("Vault folder")
+      .setDesc("Folder mapped to the Riebeckite content root.")
+      .addText((text) =>
+        text
+          .setValue(profile.vaultFolder ?? "")
+          .onChange(async (vaultFolder) => this.updateProfile({ vaultFolder })),
+      );
+    new Setting(containerEl)
+      .setName("Content root")
+      .addText((text) =>
+        text
+          .setValue(profile.contentRootId ?? "")
+          .onChange(async (contentRootId) =>
+            this.updateProfile({ contentRootId }),
+          ),
+      );
+  }
+
+  private displayCustomMappings(profile: ConnectionProfile): void {
+    const { containerEl } = this;
+    containerEl.createEl("h3", { text: "Content mappings" });
+    const mappings = contentMappings(profile);
+    for (const [index, mapping] of mappings.entries()) {
+      new Setting(containerEl)
+        .setName(`Mapping ${index + 1}`)
+        .addText((text) =>
+          text
+            .setPlaceholder("Vault folder")
+            .setValue(mapping.vaultFolder)
+            .onChange(async (vaultFolder) =>
+              this.updateMappings(mappings, index, { vaultFolder }),
+            ),
+        )
+        .addText((text) =>
+          text
+            .setPlaceholder("Content root")
+            .setValue(mapping.contentRootId)
+            .onChange(async (contentRootId) =>
+              this.updateMappings(mappings, index, { contentRootId }),
+            ),
+        )
+        .addButton((button) =>
+          button.setButtonText("Remove").onClick(async () => {
+            await this.updateProfile({
+              contentMapping: mappings.filter(
+                (_, itemIndex) => itemIndex !== index,
+              ),
+            });
+            this.display();
+          }),
+        );
+    }
+    new Setting(containerEl).addButton((button) =>
+      button.setButtonText("Add mapping").onClick(async () => {
+        await this.updateProfile({
+          contentMapping: [...mappings, { vaultFolder: "", contentRootId: "" }],
+        });
+        this.display();
+      }),
+    );
+  }
+
+  private displayMappingValidation(): void {
+    const existingFolders = new Set(
+      this.app.vault
+        .getAllLoadedFiles()
+        .filter((file): file is TFolder => file instanceof TFolder)
+        .map((folder) => folder.path),
+    );
+    const validation = validateContentMappings(
+      this.plugin.settings.profiles,
+      existingFolders,
+    );
+    for (const error of validation.errors) {
+      new Setting(this.containerEl).setName("Mapping error").setDesc(error);
+    }
+    for (const warning of validation.warnings) {
+      new Setting(this.containerEl).setName("Mapping warning").setDesc(warning);
+    }
+  }
+
+  private displayConnectionStatus(): void {
+    const state = this.plugin.bridge.getState();
+    const description =
+      state.kind === "connected"
+        ? `Riebeckite ${state.status.server.version}; Protocol v${state.status.protocolVersion}; ${state.status.capabilities.join(", ")}.`
+        : state.kind === "disconnected" || state.kind === "connecting"
+          ? state.kind
+          : state.message;
+    new Setting(this.containerEl)
+      .setName("Connection status")
+      .setDesc(description)
+      .addButton((button) =>
+        button.setButtonText("Connect").onClick(async () => {
+          await this.plugin.connectBridge();
+          this.display();
+        }),
+      )
+      .addButton((button) =>
+        button.setButtonText("Disconnect").onClick(() => {
+          this.plugin.bridge.disconnect();
+          this.display();
+        }),
+      );
+  }
+
+  private connectionTestDescription(profile: ConnectionProfile): string {
+    const result = this.connectionTest;
+    if (!result)
+      return "Tests the current URL and pairing token without saving a result.";
+    if (result.kind === "success") {
+      if (!result.identity)
+        return "Connected. This Bridge does not provide site identity.";
+      const identity = checkSiteIdentity(profile, result.identity);
+      const site = `${result.identity.siteName} (${result.identity.siteId.slice(0, 8)})`;
+      return identity === "mismatch"
+        ? `Connected to ${site}. This profile may be connected to a different site.`
+        : `Connected to ${site}.`;
+    }
+    return {
+      unreachable: "Could not reach the Bridge.",
+      authentication: "Pairing was rejected.",
+      protocol: "Bridge Protocol v1 is not supported.",
+      loopback: "Only a loopback server URL can be used.",
+    }[result.kind];
+  }
+
+  private async updateMappings(
+    mappings: readonly ContentMapping[],
+    index: number,
+    changes: Partial<ContentMapping>,
+  ): Promise<void> {
+    await this.updateProfile({
+      contentMapping: mappings.map((mapping, itemIndex) =>
+        itemIndex === index ? { ...mapping, ...changes } : mapping,
+      ),
+    });
   }
 
   private async updateProfile(
@@ -174,6 +301,7 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
         profile.id === active.id ? { ...profile, ...changes } : profile,
       ),
     });
+    this.connectionTest = undefined;
   }
 }
 
