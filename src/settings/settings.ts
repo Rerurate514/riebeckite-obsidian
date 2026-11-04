@@ -16,6 +16,8 @@ export type ConnectionProfile = {
   vaultFolder?: string;
   capabilityState?: readonly string[];
   contentMapping?: readonly ContentMapping[];
+  siteProjectDirectory?: string;
+  managedDevTrusted?: boolean;
 };
 
 export type ContentMapping = {
@@ -128,6 +130,10 @@ function parseProfile(value: unknown): ConnectionProfile[] {
           )
         : undefined,
       contentMapping: parseContentMappings(record.contentMapping),
+      siteProjectDirectory: optionalProjectDirectory(
+        record.siteProjectDirectory,
+      ),
+      managedDevTrusted: record.managedDevTrusted === true,
     },
   ];
 }
@@ -201,6 +207,12 @@ function optionalString(value: unknown): string | undefined {
 
 function optionalVaultFolder(value: unknown): string | undefined {
   return typeof value === "string" ? normalizeContentPath(value) : undefined;
+}
+
+function optionalProjectDirectory(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() && !value.includes("\0")
+    ? value.trim()
+    : undefined;
 }
 
 function normalizeContentPath(value: string): string | undefined {

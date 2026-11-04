@@ -97,6 +97,19 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
           }),
       );
     this.displayConnection(profile);
+    new Setting(containerEl)
+      .setName("Site project directory")
+      .setDesc(
+        "Local Riebeckite site project used by Start Dev. This is separate from the Vault content mapping.",
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("C:\\Sites\\my-riebeckite-site")
+          .setValue(profile.siteProjectDirectory ?? "")
+          .onChange(async (siteProjectDirectory) =>
+            this.updateProfile({ siteProjectDirectory }),
+          ),
+      );
     if (profile.mode === "custom-mapping") {
       this.displayCustomMappings(profile);
     } else if (profile.mode !== "integrated") {

@@ -11,6 +11,7 @@ import {
   type BridgeConnectionState,
 } from "./bridge/bridge-client";
 import { EditorApi } from "./bridge/editor-api";
+import { DevServerController } from "./dev/dev-server-controller";
 import {
   diagnosticDecorations,
   refreshDiagnosticDecorations,
@@ -41,6 +42,10 @@ import {
   type RiebeckiteSettings,
 } from "./settings/settings";
 import { RiebeckiteSettingsTab } from "./settings/settings-tab";
+import {
+  RiebeckiteWorkspaceView,
+  workspaceViewType,
+} from "./workspace/riebeckite-workspace-view";
 
 export default class RiebeckitePlugin extends Plugin {
   settings: RiebeckiteSettings = defaultSettings;
@@ -50,8 +55,7 @@ export default class RiebeckitePlugin extends Plugin {
   );
   readonly editor = new EditorApi(
     this.bridge,
-    () =>
-      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
+    () => this.bridgeToken(),
     () => activeProfile(this.settings)?.mutationToken,
     (path) => mapVaultPath(activeProfile(this.settings), path),
     () => this.canMutate(),
@@ -61,6 +65,7 @@ export default class RiebeckitePlugin extends Plugin {
     async () => (await this.refreshBridgeStatus()).kind,
   );
   private readonly diagnostics = new Map<string, readonly BridgeDiagnostic[]>();
+  readonly devServer = this.resources.add(new DevServerController());
 
   async onload(): Promise<void> {
     try {
@@ -69,6 +74,10 @@ export default class RiebeckitePlugin extends Plugin {
       this.registerView(
         previewViewType,
         (leaf) => new RiebeckitePreviewView(leaf, this),
+      );
+      this.registerView(
+        workspaceViewType,
+        (leaf) => new RiebeckiteWorkspaceView(leaf, this),
       );
       this.registerEditorExtension(
         diagnosticDecorations(() => {
@@ -93,6 +102,26 @@ export default class RiebeckitePlugin extends Plugin {
         this.app.vault.on("modify", () => this.scheduleRefreshViews()),
       );
       this.addCommand({
+        id: "open",
+        name: "Open",
+        callback: () => void this.openWorkspace(),
+      });
+      this.addCommand({
+        id: "start-dev",
+        name: "Start Dev",
+        callback: () => void this.startDev(),
+      });
+      this.addCommand({
+        id: "stop-dev",
+        name: "Stop Dev",
+        callback: () => void this.stopDev(),
+      });
+      this.addCommand({
+        id: "restart-dev",
+        name: "Restart Dev",
+        callback: () => void this.restartDev(),
+      });
+      this.addCommand({
         id: "open-settings",
         name: "Open settings",
         callback: () => this.openSettings(),
@@ -100,17 +129,17 @@ export default class RiebeckitePlugin extends Plugin {
       this.addCommand({
         id: "open-publication-manager",
         name: "Open Publication Manager",
-        callback: () => void this.openPublication(),
+        callback: () => void this.openWorkspace("publication"),
       });
       this.addCommand({
         id: "open-diagnostics",
         name: "Open Document Diagnostics",
-        callback: () => void this.openDiagnostics(),
+        callback: () => void this.openWorkspace("diagnostics"),
       });
       this.addCommand({
         id: "open-live-preview",
         name: "Open Live Preview",
-        callback: () => void this.openPreview(),
+        callback: () => void this.openWorkspace("preview"),
       });
       this.addCommand({
         id: "refresh-live-preview",
@@ -195,7 +224,7 @@ export default class RiebeckitePlugin extends Plugin {
     const profile = activeProfile(this.settings);
     const state = await this.bridge.connect(
       profile?.serverUrl ?? this.settings.serverUrl,
-      profile?.bridgeToken ?? this.settings.bridgeToken,
+      this.bridgeToken(),
     );
     if (state.kind === "connected") {
       this.polling.start();
@@ -238,7 +267,7 @@ export default class RiebeckitePlugin extends Plugin {
   async testConnection(): Promise<ConnectionTestResult> {
     const profile = activeProfile(this.settings);
     const serverUrl = profile?.serverUrl ?? this.settings.serverUrl;
-    const token = profile?.bridgeToken ?? this.settings.bridgeToken;
+    const token = this.bridgeToken();
     if (!isLoopbackServerUrl(serverUrl))
       return classifyConnectionTest(serverUrl, { kind: "disconnected" });
     const state = await new BridgeClient((input) => requestUrl(input)).connect(
@@ -262,7 +291,9 @@ export default class RiebeckitePlugin extends Plugin {
 
   bridgeToken(): string {
     return (
-      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken
+      this.devServer.getToken() ??
+      activeProfile(this.settings)?.bridgeToken ??
+      this.settings.bridgeToken
     );
   }
 
@@ -272,8 +303,7 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   private async refreshBridgeStatus(): Promise<BridgeConnectionState> {
-    const profile = activeProfile(this.settings);
-    const token = profile?.bridgeToken ?? this.settings.bridgeToken;
+    const token = this.bridgeToken();
     const previousRevision = this.bridge.getRevision();
     const state =
       this.bridge.getState().kind === "connected"
@@ -297,7 +327,7 @@ export default class RiebeckitePlugin extends Plugin {
     );
   }
 
-  private openSettings(): void {
+  openSettings(): void {
     const app = this.app as App & {
       setting: { open(): void; openTabById(id: string): void };
     };
@@ -310,6 +340,75 @@ export default class RiebeckitePlugin extends Plugin {
     if (!leaf) return;
     await leaf.setViewState({ type: previewViewType, active: true });
     this.app.workspace.revealLeaf(leaf);
+  }
+
+  async openWorkspace(
+    tab?: "publication" | "diagnostics" | "preview",
+  ): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(workspaceViewType)[0];
+    const leaf = existing ?? this.app.workspace.getRightLeaf(false);
+    if (!leaf) return;
+    await leaf.setViewState({ type: workspaceViewType, active: true });
+    this.app.workspace.revealLeaf(leaf);
+    if (tab) (leaf.view as RiebeckiteWorkspaceView).selectTab(tab);
+  }
+
+  activeMarkdownFile() {
+    const file = this.app.workspace.getActiveFile();
+    return file?.extension === "md" ? file : undefined;
+  }
+
+  async startDev(): Promise<void> {
+    const profile = activeProfile(this.settings);
+    if (!profile?.siteProjectDirectory) {
+      new Notice(
+        "Configure a site project with a local Riebeckite CLI before starting Dev.",
+      );
+      return;
+    }
+    if (!profile?.managedDevTrusted) {
+      const confirmed = window.confirm(
+        "Start this site's local Riebeckite CLI with `dev`? It receives a temporary Bridge pairing token.",
+      );
+      if (!confirmed) return;
+      await this.updateSettings({
+        profiles: this.settings.profiles.map((candidate) =>
+          candidate.id === profile?.id
+            ? { ...candidate, managedDevTrusted: true }
+            : candidate,
+        ),
+      });
+    }
+    if (!this.devServer.start(profile.siteProjectDirectory)) {
+      new Notice(
+        "Configure a site project with a local Riebeckite CLI before starting Dev.",
+      );
+      return;
+    }
+    const stop = this.devServer.onChange(() => {
+      const state = this.devServer.getState();
+      if (state.kind !== "running") return;
+      stop();
+      void this.connectManagedDev(state.serverUrl);
+    });
+  }
+
+  async stopDev(): Promise<void> {
+    await this.devServer.stop();
+    this.disconnectBridge();
+  }
+
+  async restartDev(): Promise<void> {
+    const profile = activeProfile(this.settings);
+    await this.stopDev();
+    const wait = () =>
+      new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+    while (this.devServer.getState().kind === "stopping") await wait();
+    if (profile?.siteProjectDirectory) await this.startDev();
+  }
+
+  async refreshWorkspace(): Promise<void> {
+    await this.refreshViews();
   }
 
   private async refreshPreviews(): Promise<void> {
@@ -327,6 +426,8 @@ export default class RiebeckitePlugin extends Plugin {
         ).refresh();
       }
     }
+    for (const leaf of this.app.workspace.getLeavesOfType(workspaceViewType))
+      (leaf.view as RiebeckiteWorkspaceView).refresh();
   }
 
   private scheduleRefreshViews(): void {
@@ -368,6 +469,19 @@ export default class RiebeckitePlugin extends Plugin {
     if (result.kind === "resolved" && result.page.routable) {
       window.open(result.previewUrl, "_blank", "noopener");
     }
+  }
+
+  private async connectManagedDev(serverUrl: string): Promise<void> {
+    const token = this.devServer.getToken();
+    const profile = activeProfile(this.settings);
+    if (!token || !profile) return;
+    await this.updateSettings({
+      profiles: this.settings.profiles.map((candidate) =>
+        candidate.id === profile.id ? { ...candidate, serverUrl } : candidate,
+      ),
+    });
+    const state = await this.connectBridge(true);
+    if (state.kind === "connected") await this.refreshViews();
   }
 }
 

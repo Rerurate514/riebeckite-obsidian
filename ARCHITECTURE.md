@@ -15,7 +15,9 @@ This repository is an independently buildable Obsidian plugin. It does not use
   Obsidian's `Plugin.register` lifecycle.
 - `src/bridge/`: authenticated, local-only Riebeckite Bridge client and its
   response validation, plus the editor-facing read adapter.
-- `src/preview/`: Live Preview pane backed by resolved manifest metadata.
+- `src/dev/`: managed local Riebeckite process lifecycle and temporary pairing token.
+- `src/workspace/`: unified Riebeckite workspace pane.
+- `src/preview/`: legacy Live Preview pane backed by resolved manifest metadata.
 - `src/publication/`: read-only Publication Manager pane and local filtering.
 - `src/diagnostics/`: read-only active-document diagnostic pane.
 - `scripts/`: build, version synchronization, and release-file validation.
@@ -62,10 +64,10 @@ Unicode text and stale diagnostics. Mutation, quick-fix, SSE subscription, and
 editor decoration adapters remain separate future work; no Vault API mutation
 is used as a substitute.
 
-The initial UI is desktop-prioritized because the intended future target is a
-local development server. `isDesktopOnly` remains `false`: this foundation uses
-no Electron, Node, or desktop-only API, so Obsidian mobile can load it safely.
-That value must become `true` before introducing a desktop-only dependency.
+The managed local development server uses Node's process APIs, so
+`isDesktopOnly` is `true`. It runs only the configured project's local
+Riebeckite executable with a runtime-only Bridge token and stops only its owned
+process. Mobile does not load this plugin.
 
 ## Platform decisions
 
