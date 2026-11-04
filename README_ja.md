@@ -12,6 +12,8 @@ Bridge Protocol v1による状態取得、解決済みページ状態、Live Pre
 Manager、Document Diagnosticsを実装済みです。接続プロファイルは統合コンテンツルートと別管理の
 コンテンツルートのマッピングに対応します。Previewは実際のローカルHonoX開発ページを表示し、
 Obsidian側でMarkdownを変換しません。Bridge revisionが変化すると公開情報を更新します。
+Publication ManagerはBridgeが返すSEOのtitle、description、canonical URL、indexable、issuesも
+表示します。
 
 ## Riebeckiteへの接続
 
@@ -102,8 +104,8 @@ pnpm build:release
 
 Publication Managerには任意capabilityの`publication`、Diagnostics Viewには`diagnostics`が必要です。
 これらを通知しない旧Bridge v1とも互換であり、該当Viewにはサーバー側未対応と表示します。公開状態は
-サーバーの`visibility`、routing、discovery、public location、理由、revisionをそのまま使用し、
-ファイル名からURLを推測しません。
+サーバーの`visibility`、routing、discovery、public location、理由、revision、SEO情報をそのまま使用し、
+ファイル名からURLを推測したりSEOを計算したりしません。
 
 有効な1始まりの位置情報を持つ診断は、エディタにマーカーを表示し、その位置でVault内と確認できたファイルを
 開きます。マーカーにはホバー時に重要度とメッセージを表示し、診断内容が変わると再構築します。列位置は書記素
