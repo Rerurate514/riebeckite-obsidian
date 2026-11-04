@@ -23,6 +23,12 @@ import {
   RiebeckitePublicationView,
 } from "./publication/publication-view";
 import {
+  type ConnectionTestResult,
+  checkSiteIdentity,
+  classifyConnectionTest,
+  isLoopbackServerUrl,
+} from "./settings/connection-validation";
+import {
   activeProfile,
   defaultSettings,
   mapContentPath,
@@ -192,21 +198,27 @@ export default class RiebeckitePlugin extends Plugin {
       await this.refreshViews();
     }
     if (state.kind === "connected") {
-      const profile = activeProfile(this.settings);
+      const currentProfile = activeProfile(this.settings);
       const identity = state.status.identity;
-      if (profile && identity) {
-        await this.updateSettings({
-          profiles: this.settings.profiles.map((candidate) =>
-            candidate.id === profile.id
-              ? {
-                  ...candidate,
-                  siteId: identity.siteId,
-                  contentRootId: identity.contentRootId,
-                  capabilityState: state.status.capabilities,
-                }
-              : candidate,
-          ),
-        });
+      if (currentProfile && identity) {
+        const identityCheck = checkSiteIdentity(currentProfile, identity);
+        if (identityCheck === "mismatch") {
+          new Notice("This profile may be connected to a different site.");
+        }
+        if (identityCheck === "unrecorded") {
+          await this.updateSettings({
+            profiles: this.settings.profiles.map((candidate) =>
+              candidate.id === currentProfile.id
+                ? {
+                    ...candidate,
+                    siteId: identity.siteId,
+                    contentRootId: identity.contentRootId,
+                    capabilityState: state.status.capabilities,
+                  }
+                : candidate,
+            ),
+          });
+        }
       }
     }
     if (!silent) new Notice(connectionMessage(state));
@@ -216,6 +228,19 @@ export default class RiebeckitePlugin extends Plugin {
   async checkBridge(): Promise<BridgeConnectionState> {
     this.bridge.disconnect();
     return await this.connectBridge();
+  }
+
+  async testConnection(): Promise<ConnectionTestResult> {
+    const profile = activeProfile(this.settings);
+    const serverUrl = profile?.serverUrl ?? this.settings.serverUrl;
+    const token = profile?.bridgeToken ?? this.settings.bridgeToken;
+    if (!isLoopbackServerUrl(serverUrl))
+      return classifyConnectionTest(serverUrl, { kind: "disconnected" });
+    const state = await new BridgeClient((input) => requestUrl(input)).connect(
+      serverUrl,
+      token,
+    );
+    return classifyConnectionTest(serverUrl, state);
   }
 
   bridgeSource(path: string): string | undefined {

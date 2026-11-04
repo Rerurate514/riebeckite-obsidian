@@ -18,20 +18,32 @@ Markdown itself. Publication data refreshes when the Bridge revision changes.
 
 1. Start the site with an explicit, unique pairing token (at least 32 characters):
    `riebeckite dev --bridge-token <token>`.
-2. In **Riebeckite** settings, enter the local server URL and the same token.
-3. Select **Connect**, or run **Riebeckite: Connect to Riebeckite**.
-4. Run **Riebeckite: Open Live Preview**. It follows the active Markdown note;
+2. In **Riebeckite** settings, add or select a connection profile, then enter the
+   local server URL and the same token.
+3. Select **Test connection** to verify the current values without saving a test
+   result. It shows the site name and a shortened site ID on success, or explains
+   unreachable, rejected pairing, incompatible protocol, and loopback failures.
+4. Select **Connect**, or run **Riebeckite: Connect to Riebeckite**.
+5. Run **Riebeckite: Open Live Preview**. It follows the active Markdown note;
    use Refresh or Open Current Preview in Browser when needed.
-5. Run **Riebeckite: Open Publication Manager** to inspect the active note, or
+6. Run **Riebeckite: Open Publication Manager** to inspect the active note, or
    choose **Refresh vault** to explicitly scan Markdown notes. Filtering and
    search operate on that local result set and do not issue requests per key.
-6. Run **Riebeckite: Open Document Diagnostics** to inspect the active note.
+7. Run **Riebeckite: Open Document Diagnostics** to inspect the active note.
    `No issues` is shown only after a successful empty response; unavailable
     server data is shown separately.
-7. To edit publication frontmatter, set the separate **Bridge mutation token**
+8. To edit publication frontmatter, set the separate **Bridge mutation token**
    in the active profile. In Publication Manager, create and review a plan, have
    it approved by the server-side approval workflow, then select **Apply approved
-   plan**. Obsidian cannot approve plans and never receives the approval secret.
+    plan**. Obsidian cannot approve plans and never receives the approval secret.
+
+Integrated profiles require only the server URL and pairing token. Separate local
+and Git profiles additionally configure one Vault folder and content root. Custom
+mapping profiles can configure multiple folder-to-content-root mappings. Missing
+Vault folders and duplicate mappings are shown in settings but do not block saving.
+When a saved site ID differs from the connected Bridge identity, the plugin warns
+that the profile may point at a different site and retains the saved ID. Older
+Bridges without identity remain supported.
 
 Only `localhost`, `127.0.0.0/8`, and `::1` URLs are accepted. The Bridge is
 disabled unless its token is supplied, binds to loopback only, and accepts no
@@ -81,8 +93,9 @@ pnpm build:release
 1. Install the build into a test vault as described above.
 2. Enable the plugin, run **Riebeckite: Open settings**, and confirm its tab
    opens.
-3. Set **Riebeckite Server URL** and **Bridge pairing token**, reopen the settings
-   tab, and confirm both values persist.
+3. Set the active profile's **Riebeckite Server URL** and **Bridge pairing token**,
+   reopen the settings tab, and confirm both values persist. Select **Test
+   connection** and confirm its site identity result.
 4. Select **Connect**, open a Markdown note, then run **Riebeckite: Open Live
    Preview**. Confirm the actual development page, preview URL, visibility, and
    public URL (when `site.baseUrl` is configured) appear.

@@ -17,18 +17,26 @@ Obsidian側でMarkdownを変換しません。Bridge revisionが変化すると�
 
 1. 32文字以上の一意なペアリングトークンを指定してサイトを起動します。
    `riebeckite dev --bridge-token <token>`
-2. **Riebeckite** の設定でローカルサーバーURLと同じトークンを入力します。
-3. **Connect** を選ぶか、**Riebeckite: Connect to Riebeckite** を実行します。
-4. **Riebeckite: Open Live Preview** を実行します。アクティブなMarkdownノートに追従し、必要に
+2. **Riebeckite** の設定で接続プロファイルを追加または選択し、ローカルサーバーURLと同じトークンを入力します。
+3. **Test connection** を選び、現在の入力値で接続を確認します。テスト結果は保存されず、成功時は
+   サイト名と短縮したsite ID、失敗時は到達不可・ペアリング拒否・プロトコル非対応・loopback制約違反を表示します。
+4. **Connect** を選ぶか、**Riebeckite: Connect to Riebeckite** を実行します。
+5. **Riebeckite: Open Live Preview** を実行します。アクティブなMarkdownノートに追従し、必要に
    応じてRefreshまたはOpen Current Preview in Browserを使います。
-5. **Riebeckite: Open Publication Manager** を実行するとアクティブノートを確認できます。Vault全体を
+6. **Riebeckite: Open Publication Manager** を実行するとアクティブノートを確認できます。Vault全体を
    取得する場合だけ **Refresh vault** を選びます。フィルタと検索は取得済みのローカル結果だけを対象とし、
    キー入力ごとにBridgeへ問い合わせません。
-6. **Riebeckite: Open Document Diagnostics** を実行するとアクティブノートの診断を確認できます。
+7. **Riebeckite: Open Document Diagnostics** を実行するとアクティブノートの診断を確認できます。
     成功した空配列だけを「問題なし」と表示し、サーバーから取得できない状態とは区別します。
-7. 公開用フロントマターを編集するには、アクティブプロファイルに別の **Bridge mutation token** を設定します。
+8. 公開用フロントマターを編集するには、アクティブプロファイルに別の **Bridge mutation token** を設定します。
    Publication ManagerでPlanを作成・確認し、サーバー側の承認フローで承認した後に **Apply approved plan** を選びます。
-   ObsidianはPlanを承認せず、承認用secretも受け取りません。
+    ObsidianはPlanを承認せず、承認用secretも受け取りません。
+
+integratedプロファイルで必要なのはサーバーURLとペアリングトークンだけです。separate local / Gitでは
+Vaultフォルダとコンテンツルートも設定します。custom mappingでは複数のフォルダとコンテンツルートの対応を
+設定できます。存在しないVaultフォルダと重複したマッピングは設定画面に表示しますが、保存は妨げません。
+保存済みのsite IDと接続先Bridgeのidentityが異なる場合は別のサイトへ接続している可能性を警告し、保存済みの
+site IDは変更しません。identityを返さない旧Bridgeも利用できます。
 
 `localhost`、`127.0.0.0/8`、`::1` 以外のURLは受け付けません。Bridgeはトークン指定時だけ
 有効になり、loopbackだけで待ち受けます。Cross-Originおよび転送ヘッダー付きのリクエストは
@@ -77,8 +85,8 @@ pnpm build:release
 
 1. 上記の手順でテスト用Vaultへビルド成果物を導入します。
 2. プラグインを有効化し、**Riebeckite: Open settings** を実行して設定タブが開くことを確認します。
-3. **Riebeckite Server URL** と **Bridge pairing token** を入力し、設定タブを開き直して
-   両方の値が保存されることを確認します。
+3. アクティブプロファイルの **Riebeckite Server URL** と **Bridge pairing token** を入力し、設定タブを
+   開き直して両方の値が保存されることを確認します。**Test connection** を選び、site identityの結果も確認します。
 4. **Connect** を選びMarkdownノートを開いてから、**Riebeckite: Open Live Preview** を実行します。
    実際の開発ページ、Preview URL、公開状態、`site.baseUrl`設定時の公開URLが表示されることを確認します。
 5. **Disconnect** を選んだ後にプラグインを無効化・再有効化し、コマンドが重複登録されないことを確認します。
