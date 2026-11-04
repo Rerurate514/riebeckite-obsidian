@@ -223,7 +223,7 @@ export class RiebeckitePublicationView extends ItemView {
     if (request !== this.diagnosticRequest || path !== this.selectedPath)
       return;
     this.diagnosticSummaries.set(
-      path,
+      this.plugin.bridgeSource(path) ?? "",
       result.kind === "resolved"
         ? result.value.length
           ? `${result.value.length} issue(s)`

@@ -144,6 +144,18 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
             this.display();
           }),
       );
+    if (profile.mode !== "integrated") {
+      new Setting(containerEl)
+        .setName("Vault folder")
+        .setDesc("Folder mapped to the Riebeckite content root.")
+        .addText((text) =>
+          text
+            .setValue(profile.vaultFolder ?? "")
+            .onChange(async (vaultFolder) => {
+              await this.updateProfile({ vaultFolder });
+            }),
+        );
+    }
   }
 
   private async updateProfile(

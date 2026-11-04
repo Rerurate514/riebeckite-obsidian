@@ -23,6 +23,7 @@ import {
 import {
   activeProfile,
   defaultSettings,
+  mapVaultPath,
   parseSettings,
   type RiebeckiteSettings,
 } from "./settings/settings";
@@ -34,7 +35,12 @@ export default class RiebeckitePlugin extends Plugin {
   readonly bridge = this.resources.add(
     new BridgeClient((input) => requestUrl(input)),
   );
-  readonly editor = new EditorApi(this.bridge, () => this.settings.bridgeToken);
+  readonly editor = new EditorApi(
+    this.bridge,
+    () =>
+      activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
+    (path) => mapVaultPath(activeProfile(this.settings), path),
+  );
   private refreshTimer: number | undefined;
 
   async onload(): Promise<void> {
@@ -178,6 +184,10 @@ export default class RiebeckitePlugin extends Plugin {
     return await this.connectBridge();
   }
 
+  bridgeSource(path: string): string | undefined {
+    return mapVaultPath(activeProfile(this.settings), path);
+  }
+
   private openSettings(): void {
     const app = this.app as App & {
       setting: { open(): void; openTabById(id: string): void };
@@ -235,10 +245,15 @@ export default class RiebeckitePlugin extends Plugin {
   private async openCurrentPreviewInBrowser(): Promise<void> {
     const file = this.app.workspace.getActiveFile();
     if (!file || this.bridge.getState().kind !== "connected") return;
+    const source = this.bridgeSource(file.path);
+    if (!source) {
+      new Notice("This note is outside the profile's mapped vault folder.");
+      return;
+    }
     const result = await this.bridge.resolvePage(
       activeProfile(this.settings)?.serverUrl ?? this.settings.serverUrl,
       activeProfile(this.settings)?.bridgeToken ?? this.settings.bridgeToken,
-      file.path,
+      source,
     );
     if (result.kind === "resolved" && result.page.routable) {
       window.open(result.previewUrl, "_blank", "noopener");

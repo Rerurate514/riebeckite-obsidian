@@ -68,6 +68,29 @@ export function activeProfile(
   );
 }
 
+export function mapVaultPath(
+  profile: ConnectionProfile | undefined,
+  vaultPath: string,
+): string | undefined {
+  const path = normalizeContentPath(vaultPath);
+  if (!path) return undefined;
+  if (!profile || profile.mode === "integrated") return path;
+  const folder = profile.vaultFolder;
+  return folder && path.startsWith(`${folder}/`)
+    ? path.slice(folder.length + 1)
+    : undefined;
+}
+
+export function mapContentPath(
+  profile: ConnectionProfile | undefined,
+  contentPath: string,
+): string | undefined {
+  const path = normalizeContentPath(contentPath);
+  if (!path) return undefined;
+  if (!profile || profile.mode === "integrated") return path;
+  return profile.vaultFolder ? `${profile.vaultFolder}/${path}` : undefined;
+}
+
 function parseProfile(value: unknown): ConnectionProfile[] {
   if (typeof value !== "object" || value === null) return [];
   const record = value as Record<string, unknown>;
@@ -127,8 +150,15 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function optionalVaultFolder(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 && !value.includes("\0")
-    ? value.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
+  return typeof value === "string" ? normalizeContentPath(value) : undefined;
+}
+
+function normalizeContentPath(value: string): string | undefined {
+  const path = value.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  return path &&
+    !path.includes("\0") &&
+    !path.split("/").some((part) => !part || part === "." || part === "..")
+    ? path
     : undefined;
 }
 
