@@ -101,6 +101,22 @@ pnpm build:release
 
 `build:release` builds and verifies the files required by Obsidian releases.
 
+### Performance
+
+`pnpm test` includes the performance checks. Measured on Node.js 24.22.1,
+Windows 10.0.26200, AMD Ryzen 7 7730U:
+
+| Workload | 1,000 | 5,000 | 10,000 |
+| --- | --- | --- | --- |
+| Diagnostic positions | 0.5 ms | 1.7 ms | 4.0 ms |
+| Diagnostic decorations | 0.7 ms | 2.4 ms | 6.3 ms |
+| Publication list filter | 0.06 ms | 0.22 ms | 0.37 ms |
+
+Twelve refreshes of 10,000 diagnostics kept the heap floor at about 18 MiB in
+the same environment. The tests cover position and decoration construction plus
+list filtering, not Obsidian DOM rendering. Timings vary by machine; run
+`pnpm test` to reproduce.
+
 ## Manual Obsidian verification
 
 1. Install the build into a test vault as described above.
@@ -133,10 +149,11 @@ Diagnostics with valid 1-based source positions mark the editor and open the
 verified vault file at that location. Markers show severity and message on
 hover, rebuild when their contents change, and clamp grapheme-based columns to
 their source line. The diagnostics list replaces its DOM on each refresh and
-ignores responses that arrive after a newer refresh or close. Decoration
-construction is linear apart from one position sort and is verified against
-10,000 diagnostics; very large result sets still render one control per
-diagnostic. The plugin polls Bridge status from startup and every five seconds
+ignores responses that arrive after a newer refresh or close; Preview and
+Publication Manager also discard responses that arrive after a newer request
+or after their view closes. Decoration construction is linear apart from one
+position sort and is verified against 10,000 diagnostics; very large result
+sets still render one control per diagnostic. The plugin polls Bridge status from startup and every five seconds
 thereafter, and refreshes views when its revision changes. Temporary failures
 retry with a 5-to-60-second exponential backoff; a successful connection resets
 the interval, and rejected pairing stops automatic retries. These refreshes do

@@ -4,6 +4,7 @@ import type {
   BridgeMutationPlan,
   BridgePublication,
 } from "../bridge/bridge-client";
+import { RequestGate } from "../lifecycle/request-gate";
 import type RiebeckitePlugin from "../main";
 import {
   filterPublications,
@@ -22,8 +23,10 @@ export class RiebeckitePublicationView extends ItemView {
   private filter: PublicationFilter = "all";
   private query = "";
   private selectedPath: string | undefined;
-  private request = 0;
-  private diagnosticRequest = 0;
+  private readonly requests = new RequestGate();
+  private readonly diagnosticRequests = new RequestGate();
+  private readonly impactRequests = new RequestGate();
+  private closed = false;
   private visibleRows = 100;
   private mutationPlan: { path: string; plan: BridgeMutationPlan } | undefined;
   private mutationMessage: string | undefined;
@@ -44,7 +47,16 @@ export class RiebeckitePublicationView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    this.closed = false;
     await this.refresh();
+  }
+
+  onClose(): Promise<void> {
+    this.closed = true;
+    this.requests.cancel();
+    this.diagnosticRequests.cancel();
+    this.impactRequests.cancel();
+    return Promise.resolve();
   }
 
   async refresh(): Promise<void> {
@@ -54,9 +66,9 @@ export class RiebeckitePublicationView extends ItemView {
   }
 
   private async refreshFile(file: TFile): Promise<void> {
-    const request = ++this.request;
+    const request = this.requests.begin();
     const result = await this.plugin.editor.publication(file.path);
-    if (request !== this.request) return;
+    if (!this.requests.isCurrent(request)) return;
     this.rows.set(file.path, toRow(file, result));
     this.selectedPath ??= file.path;
   }
@@ -66,7 +78,7 @@ export class RiebeckitePublicationView extends ItemView {
       this.render();
       return;
     }
-    const request = ++this.request;
+    const request = this.requests.begin();
     const files = this.app.vault.getMarkdownFiles();
     this.visibleRows = 100;
     for (const file of files) {
@@ -84,7 +96,7 @@ export class RiebeckitePublicationView extends ItemView {
         const file = files[index++];
         if (!file) return;
         const result = await this.plugin.editor.publication(file.path);
-        if (request !== this.request) return;
+        if (!this.requests.isCurrent(request)) return;
         this.rows.set(file.path, toRow(file, result));
         if (index % 25 === 0)
           this.render(`Refreshing publication data… ${index}/${files.length}`);
@@ -93,10 +105,11 @@ export class RiebeckitePublicationView extends ItemView {
     await Promise.all(
       Array.from({ length: Math.min(4, files.length) }, worker),
     );
-    if (request === this.request) this.render();
+    if (this.requests.isCurrent(request)) this.render();
   }
 
   private render(message?: string): void {
+    if (this.closed) return;
     const container = this.contentEl;
     container.empty();
     container.createEl("h4", { text: "Publication Manager" });
@@ -397,9 +410,12 @@ export class RiebeckitePublicationView extends ItemView {
       this.render();
       return;
     }
-    const request = ++this.diagnosticRequest;
+    const request = this.diagnosticRequests.begin();
     const result = await this.plugin.editor.diagnostics(path);
-    if (request !== this.diagnosticRequest || path !== this.selectedPath)
+    if (
+      !this.diagnosticRequests.isCurrent(request) ||
+      path !== this.selectedPath
+    )
       return;
     this.diagnosticSummaries.set(
       this.plugin.bridgeSource(path) ?? "",
@@ -416,8 +432,14 @@ export class RiebeckitePublicationView extends ItemView {
 
   private async loadImpact(path: string): Promise<void> {
     if (!this.plugin.editor.supports("build-impact")) return;
+    const request = this.impactRequests.begin();
     const result = await this.plugin.editor.impact(path);
-    if (path !== this.selectedPath || result.kind !== "resolved") return;
+    if (
+      !this.impactRequests.isCurrent(request) ||
+      path !== this.selectedPath ||
+      result.kind !== "resolved"
+    )
+      return;
     this.impacts.set(path, result.value);
     this.render();
   }

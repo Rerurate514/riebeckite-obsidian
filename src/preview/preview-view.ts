@@ -1,10 +1,11 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
+import { RequestGate } from "../lifecycle/request-gate";
 import type RiebeckitePlugin from "../main";
 
 export const previewViewType = "riebeckite-live-preview";
 
 export class RiebeckitePreviewView extends ItemView {
-  private request = 0;
+  private readonly requests = new RequestGate();
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -26,7 +27,7 @@ export class RiebeckitePreviewView extends ItemView {
   }
 
   async refresh(): Promise<void> {
-    const request = ++this.request;
+    const request = this.requests.begin();
     const container = this.contentEl;
     container.empty();
     const file = this.app.workspace.getActiveFile();
@@ -50,7 +51,7 @@ export class RiebeckitePreviewView extends ItemView {
       this.plugin.bridgeToken(),
       source,
     );
-    if (request !== this.request) return;
+    if (!this.requests.isCurrent(request)) return;
     if (result.kind !== "resolved") {
       container.createEl("p", {
         text:
@@ -95,5 +96,10 @@ export class RiebeckitePreviewView extends ItemView {
     frame.setAttribute("sandbox", "allow-forms allow-popups allow-scripts");
     frame.setAttribute("title", "Riebeckite live preview");
     frame.src = result.previewUrl;
+  }
+
+  onClose(): Promise<void> {
+    this.requests.cancel();
+    return Promise.resolve();
   }
 }

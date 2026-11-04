@@ -49,7 +49,7 @@ export function diagnosticDecorations(
   );
 }
 
-function buildDecorations(
+export function buildDecorations(
   view: EditorView,
   diagnostics: readonly BridgeDiagnostic[],
 ): DecorationSet {
