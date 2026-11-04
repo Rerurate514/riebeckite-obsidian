@@ -279,6 +279,33 @@ test("refreshes a connected Bridge status without bootstrapping again", async ()
   assert.equal(requests.filter((url) => url.endsWith("/bootstrap")).length, 1);
 });
 
+test("reads build impact only when advertised by the Bridge", async () => {
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1"))
+      return response({ ...connectedStatus, capabilities: ["build-impact"] });
+    return response({
+      status: "resolved",
+      impact: {
+        completeness: "complete",
+        affectedOutputs: [{ path: "hello/index.html" }],
+        unchangedOutputs: [],
+        removedOutputs: [],
+        fullRegenerationRequired: false,
+      },
+      revision: 1,
+    });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+  const result = await client.inspectImpact("a".repeat(32), "notes/hello.md");
+  assert.equal(result.kind, "resolved");
+  assert.equal(
+    result.kind === "resolved" && result.value.affectedOutputs[0]?.path,
+    "hello/index.html",
+  );
+});
+
 function response(json: unknown, status = 200) {
   return { status, json } as Awaited<ReturnType<BridgeRequest>>;
 }

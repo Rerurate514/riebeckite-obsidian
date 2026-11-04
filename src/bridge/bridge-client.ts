@@ -77,6 +77,14 @@ export type BridgeDiagnostic = {
   fix: { kind: string; description: string } | undefined;
 };
 
+export type BridgeImpact = {
+  completeness: "complete" | "unknown";
+  affectedOutputs: readonly { path: string }[];
+  unchangedOutputs: readonly { path: string }[];
+  removedOutputs: readonly { path: string }[];
+  fullRegenerationRequired: boolean;
+};
+
 export type BridgeInspectionResult<T> =
   | { kind: "resolved"; value: T; revision: number }
   | { kind: "unavailable" }
@@ -236,8 +244,15 @@ export class BridgeClient implements Disposable {
     return this.inspect("diagnostics", token, source, parseDiagnostics);
   }
 
+  inspectImpact(
+    token: string,
+    source: string,
+  ): Promise<BridgeInspectionResult<BridgeImpact>> {
+    return this.inspect("impact", token, source, parseImpact);
+  }
+
   private async inspect<T>(
-    capability: "publication" | "diagnostics",
+    capability: "publication" | "diagnostics" | "impact",
     token: string,
     source: string,
     parse: (value: Record<string, unknown>) => T | undefined,
@@ -245,7 +260,10 @@ export class BridgeClient implements Disposable {
     const origin = this.privateOrigin;
     if (this.disposed || !origin || !isContentPath(source))
       return { kind: "unavailable" };
-    if (!this.hasCapability(capability)) return { kind: "unsupported" };
+    if (
+      !this.hasCapability(capability === "impact" ? "build-impact" : capability)
+    )
+      return { kind: "unsupported" };
     const generation = this.generation;
     try {
       const response = await this.requestWithTimeout({
@@ -489,6 +507,33 @@ function parseDiagnostics(
   return diagnostics.every((diagnostic) => diagnostic !== undefined)
     ? (diagnostics as BridgeDiagnostic[])
     : undefined;
+}
+
+function parseImpact(value: Record<string, unknown>): BridgeImpact | undefined {
+  if (value.status !== "resolved" || !isRecord(value.impact)) return undefined;
+  const impact = value.impact;
+  const outputs = [
+    impact.affectedOutputs,
+    impact.unchangedOutputs,
+    impact.removedOutputs,
+  ];
+  if (
+    !["complete", "unknown"].includes(String(impact.completeness)) ||
+    typeof impact.fullRegenerationRequired !== "boolean" ||
+    !outputs.every(
+      (output) =>
+        Array.isArray(output) &&
+        output.every((item) => isRecord(item) && typeof item.path === "string"),
+    )
+  )
+    return undefined;
+  return {
+    completeness: impact.completeness as BridgeImpact["completeness"],
+    affectedOutputs: impact.affectedOutputs as { path: string }[],
+    unchangedOutputs: impact.unchangedOutputs as { path: string }[],
+    removedOutputs: impact.removedOutputs as { path: string }[],
+    fullRegenerationRequired: impact.fullRegenerationRequired,
+  };
 }
 
 function parseDiagnostic(value: unknown): BridgeDiagnostic | undefined {

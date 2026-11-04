@@ -1,6 +1,7 @@
 import type {
   BridgeClient,
   BridgeDiagnostic,
+  BridgeImpact,
   BridgeInspectionResult,
   BridgePublication,
 } from "./bridge-client";
@@ -17,7 +18,9 @@ export class EditorApi {
     return this.bridge.getRevision();
   }
 
-  supports(capability: "publication" | "diagnostics"): boolean {
+  supports(
+    capability: "publication" | "diagnostics" | "build-impact",
+  ): boolean {
     return this.bridge.hasCapability(capability);
   }
 
@@ -34,6 +37,12 @@ export class EditorApi {
   ): Promise<BridgeInspectionResult<readonly BridgeDiagnostic[]>> {
     return this.inspect(source, (path) =>
       this.bridge.inspectDiagnostics(this.token(), path),
+    );
+  }
+
+  impact(source: string): Promise<BridgeInspectionResult<BridgeImpact>> {
+    return this.inspect(source, (path) =>
+      this.bridge.inspectImpact(this.token(), path),
     );
   }
 

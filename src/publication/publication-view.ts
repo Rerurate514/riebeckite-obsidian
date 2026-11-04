@@ -1,4 +1,5 @@
 import { ItemView, TFile, type WorkspaceLeaf } from "obsidian";
+import type { BridgeImpact } from "../bridge/bridge-client";
 import type RiebeckitePlugin from "../main";
 import {
   filterPublications,
@@ -11,6 +12,7 @@ export const publicationViewType = "riebeckite-publication";
 export class RiebeckitePublicationView extends ItemView {
   private readonly rows = new Map<string, PublicationRow>();
   private readonly diagnosticSummaries = new Map<string, string>();
+  private readonly impacts = new Map<string, BridgeImpact>();
   private filter: PublicationFilter = "all";
   private query = "";
   private selectedPath: string | undefined;
@@ -151,6 +153,7 @@ export class RiebeckitePublicationView extends ItemView {
         this.selectedPath = row.path;
         this.render();
         void this.loadDiagnosticSummary(row.path);
+        void this.loadImpact(row.path);
       };
     }
     const selected = this.selectedPath
@@ -181,8 +184,15 @@ export class RiebeckitePublicationView extends ItemView {
       ["Revision", String(publication.revision)],
       ["Reasons", publication.reasons.join("; ")],
       ["Diagnostics", this.diagnosticSummaries.get(row.path) ?? "not loaded"],
+      ["SEO", seoStatus(publication)],
     ]) {
       details.createEl("p", { text: `${label}: ${value}` });
+    }
+    const impact = this.impacts.get(row.path);
+    if (impact) {
+      details.createEl("p", {
+        text: `Last build impact: ${impact.affectedOutputs.length} changed, ${impact.unchangedOutputs.length} unchanged, ${impact.removedOutputs.length} removed (${impact.completeness}).`,
+      });
     }
     if (publication.redirects.length) {
       details.createEl("p", {
@@ -235,6 +245,14 @@ export class RiebeckitePublicationView extends ItemView {
     this.render();
   }
 
+  private async loadImpact(path: string): Promise<void> {
+    if (!this.plugin.editor.supports("build-impact")) return;
+    const result = await this.plugin.editor.impact(path);
+    if (path !== this.selectedPath || result.kind !== "resolved") return;
+    this.impacts.set(path, result.value);
+    this.render();
+  }
+
   private async openNote(path: string): Promise<void> {
     const file = this.app.vault.getAbstractFileByPath(path);
     if (file instanceof TFile)
@@ -250,6 +268,15 @@ export class RiebeckitePublicationView extends ItemView {
     if (result.kind === "resolved" && result.page.routable)
       window.open(result.previewUrl, "_blank", "noopener");
   }
+}
+
+function seoStatus(
+  publication: NonNullable<PublicationRow["publication"]>,
+): string {
+  if (!publication.discoverable) return "not indexed";
+  return publication.canonicalUrl
+    ? "indexable; canonical URL available"
+    : "indexable";
 }
 
 const filters: readonly { value: PublicationFilter; label: string }[] = [
