@@ -1,5 +1,6 @@
 import { ItemView, TFile, type WorkspaceLeaf } from "obsidian";
 import type { BridgeDiagnostic } from "../bridge/bridge-client";
+import { RequestGate } from "../lifecycle/request-gate";
 import type RiebeckitePlugin from "../main";
 
 export const diagnosticsViewType = "riebeckite-diagnostics";
@@ -21,7 +22,7 @@ type DiagnosticsState =
   | { kind: "error" };
 
 export class RiebeckiteDiagnosticsView extends ItemView {
-  private request = 0;
+  private readonly requests = new RequestGate();
   private path: string | undefined;
   private state: DiagnosticsState = { kind: "loading" };
 
@@ -45,7 +46,7 @@ export class RiebeckiteDiagnosticsView extends ItemView {
   }
 
   async refresh(): Promise<void> {
-    const request = ++this.request;
+    const request = this.requests.begin();
     const file = this.app.workspace.getActiveFile();
     if (file?.extension !== "md") {
       this.path = undefined;
@@ -67,7 +68,7 @@ export class RiebeckiteDiagnosticsView extends ItemView {
     this.state = { kind: "loading" };
     this.render();
     const result = await this.plugin.editor.diagnostics(file.path);
-    if (request !== this.request || this.path !== file.path) return;
+    if (!this.requests.isCurrent(request) || this.path !== file.path) return;
     if (result.kind !== "resolved") {
       this.state =
         result.kind === "unavailable" || result.kind === "unsupported"
@@ -93,7 +94,7 @@ export class RiebeckiteDiagnosticsView extends ItemView {
   }
 
   onClose(): Promise<void> {
-    this.request++;
+    this.requests.cancel();
     this.path = undefined;
     return Promise.resolve();
   }
