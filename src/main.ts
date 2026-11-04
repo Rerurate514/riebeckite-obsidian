@@ -42,6 +42,7 @@ export default class RiebeckitePlugin extends Plugin {
     (path) => mapVaultPath(activeProfile(this.settings), path),
   );
   private refreshTimer: number | undefined;
+  private reconnect = false;
 
   async onload(): Promise<void> {
     try {
@@ -66,6 +67,9 @@ export default class RiebeckitePlugin extends Plugin {
       );
       this.registerEvent(
         this.app.vault.on("modify", () => this.scheduleRefreshViews()),
+      );
+      this.registerInterval(
+        window.setInterval(() => void this.refreshBridgeStatus(), 5_000),
       );
       this.addCommand({
         id: "open-settings",
@@ -107,6 +111,7 @@ export default class RiebeckitePlugin extends Plugin {
         name: "Disconnect from Riebeckite",
         callback: () => {
           this.bridge.disconnect();
+          this.reconnect = false;
           void this.refreshViews();
           new Notice("Disconnected from Riebeckite.");
         },
@@ -150,13 +155,16 @@ export default class RiebeckitePlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  async connectBridge(): Promise<BridgeConnectionState> {
+  async connectBridge(silent = false): Promise<BridgeConnectionState> {
     const profile = activeProfile(this.settings);
     const state = await this.bridge.connect(
       profile?.serverUrl ?? this.settings.serverUrl,
       profile?.bridgeToken ?? this.settings.bridgeToken,
     );
-    if (state.kind === "connected") await this.refreshViews();
+    if (state.kind === "connected") {
+      this.reconnect = true;
+      await this.refreshViews();
+    }
     if (state.kind === "connected") {
       const profile = activeProfile(this.settings);
       const identity = state.status.identity;
@@ -175,7 +183,7 @@ export default class RiebeckitePlugin extends Plugin {
         });
       }
     }
-    new Notice(connectionMessage(state));
+    if (!silent) new Notice(connectionMessage(state));
     return state;
   }
 
@@ -186,6 +194,22 @@ export default class RiebeckitePlugin extends Plugin {
 
   bridgeSource(path: string): string | undefined {
     return mapVaultPath(activeProfile(this.settings), path);
+  }
+
+  private async refreshBridgeStatus(): Promise<void> {
+    if (!this.reconnect) return;
+    const profile = activeProfile(this.settings);
+    const token = profile?.bridgeToken ?? this.settings.bridgeToken;
+    const previousRevision = this.bridge.getRevision();
+    const state =
+      this.bridge.getState().kind === "connected"
+        ? await this.bridge.refreshStatus(token)
+        : await this.connectBridge(true);
+    if (
+      state.kind === "connected" &&
+      state.status.development.revision !== previousRevision
+    )
+      await this.refreshViews();
   }
 
   private openSettings(): void {

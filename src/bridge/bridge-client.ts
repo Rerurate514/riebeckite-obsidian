@@ -185,6 +185,43 @@ export class BridgeClient implements Disposable {
     );
   }
 
+  async refreshStatus(token: string): Promise<BridgeConnectionState> {
+    const origin = this.privateOrigin;
+    if (this.disposed || !origin) return this.state;
+    const generation = this.generation;
+    try {
+      const response = await this.requestWithTimeout({
+        url: `${origin}/__riebeckite/bridge/v1`,
+        method: "GET",
+        headers: {
+          "x-riebeckite-bridge-token": token,
+          "x-riebeckite-bridge-protocol": "1",
+        },
+        throw: false,
+      });
+      if (this.disposed || generation !== this.generation) return this.state;
+      if (response.status === 403)
+        return this.setState({
+          kind: "unauthorized",
+          message: "Pairing was rejected.",
+        });
+      const status =
+        response.status === 200 ? parseStatus(response.json) : undefined;
+      return status
+        ? this.setConnected(origin, status)
+        : this.setState({
+            kind: "unavailable",
+            message: "Bridge is unavailable.",
+          });
+    } catch {
+      if (this.disposed || generation !== this.generation) return this.state;
+      return this.setState({
+        kind: "unavailable",
+        message: "Could not reach the Bridge.",
+      });
+    }
+  }
+
   inspectPublication(
     token: string,
     source: string,

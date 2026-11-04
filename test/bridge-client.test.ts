@@ -255,6 +255,30 @@ test("keeps no-source diagnostics readable when optional fields are omitted", as
   });
 });
 
+test("refreshes a connected Bridge status without bootstrapping again", async () => {
+  let revision = 1;
+  const requests: string[] = [];
+  const client = new BridgeClient(async (input) => {
+    requests.push(input.url);
+    return input.url.endsWith("/bootstrap")
+      ? response({ origin: "http://127.0.0.1:4567" })
+      : response({
+          ...connectedStatus,
+          development: { ...connectedStatus.development, revision: revision++ },
+        });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const state = await client.refreshStatus("a".repeat(32));
+
+  assert.equal(state.kind, "connected");
+  assert.equal(
+    state.kind === "connected" && state.status.development.revision,
+    2,
+  );
+  assert.equal(requests.filter((url) => url.endsWith("/bootstrap")).length, 1);
+});
+
 function response(json: unknown, status = 200) {
   return { status, json } as Awaited<ReturnType<BridgeRequest>>;
 }
