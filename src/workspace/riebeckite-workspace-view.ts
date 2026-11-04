@@ -1,6 +1,6 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type RiebeckitePlugin from "../main";
-import { activeProfile } from "../settings/settings";
+import { activeSite } from "../settings/settings";
 
 export const workspaceViewType = "riebeckite-workspace";
 
@@ -56,18 +56,18 @@ export class RiebeckiteWorkspaceView extends ItemView {
   private render(): void {
     const container = this.contentEl;
     container.empty();
-    const profile = activeProfile(this.plugin.settings);
+    const site = activeSite(this.plugin.settings);
     container.createEl("h4", { text: "Riebeckite" });
     const identity = container.createDiv({
       cls: "riebeckite-workspace-identity",
     });
     identity.createEl("div", {
-      text: `Site: ${profile?.displayName ?? "Not configured"}`,
+      text: `Site: ${site?.displayName ?? "Not configured"}`,
     });
     identity.createEl("small", {
-      text: `Docs: ${profile?.vaultFolder ?? "This vault"}`,
+      text: `Docs: ${site?.vaultFolder ?? "This vault"}`,
     });
-    this.renderServerControls(container, profile?.siteProjectDirectory);
+    this.renderServerControls(container, site?.projectDirectory);
     const navigation = container.createDiv({
       cls: "riebeckite-workspace-tabs",
       attr: { role: "tablist", "aria-label": "Riebeckite" },
@@ -117,7 +117,7 @@ export class RiebeckiteWorkspaceView extends ItemView {
       start.onclick = () => void this.plugin.startDev();
       if (!directory)
         container.createEl("p", {
-          text: "Choose a Site Project Directory in Riebeckite settings before starting.",
+          text: "Choose a Site Project before starting.",
         });
     }
   }

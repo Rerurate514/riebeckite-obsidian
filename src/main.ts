@@ -1,15 +1,18 @@
+import { existsSync } from "node:fs";
+import { basename, join } from "node:path";
 import {
   type App,
   Notice,
+  Platform,
   Plugin,
   requestUrl,
   type WorkspaceLeaf,
 } from "obsidian";
-import type { BridgeDiagnostic } from "./bridge/bridge-client";
-import {
-  BridgeClient,
-  type BridgeConnectionState,
+import type {
+  BridgeConnectionState,
+  BridgeDiagnostic,
 } from "./bridge/bridge-client";
+import { BridgeClient } from "./bridge/bridge-client";
 import { EditorApi } from "./bridge/editor-api";
 import { DevServerController } from "./dev/dev-server-controller";
 import {
@@ -27,19 +30,15 @@ import {
   publicationViewType,
   RiebeckitePublicationView,
 } from "./publication/publication-view";
+import { checkSiteIdentity } from "./settings/connection-validation";
 import {
-  type ConnectionTestResult,
-  checkSiteIdentity,
-  classifyConnectionTest,
-  isLoopbackServerUrl,
-} from "./settings/connection-validation";
-import {
-  activeProfile,
+  activeSite,
   defaultSettings,
   mapContentPath,
   mapVaultPath,
   parseSettings,
   type RiebeckiteSettings,
+  type SiteProject,
 } from "./settings/settings";
 import { RiebeckiteSettingsTab } from "./settings/settings-tab";
 import {
@@ -53,19 +52,19 @@ export default class RiebeckitePlugin extends Plugin {
   readonly bridge = this.resources.add(
     new BridgeClient((input) => requestUrl(input)),
   );
+  readonly devServer = this.resources.add(new DevServerController());
   readonly editor = new EditorApi(
     this.bridge,
     () => this.bridgeToken(),
-    () => activeProfile(this.settings)?.mutationToken,
-    (path) => mapVaultPath(activeProfile(this.settings), path),
-    () => this.canMutate(),
+    () => undefined,
+    (path) => this.bridgeSource(path),
+    () => false,
   );
-  private refreshTimer: number | undefined;
   private readonly polling = new BridgePolling(
     async () => (await this.refreshBridgeStatus()).kind,
   );
   private readonly diagnostics = new Map<string, readonly BridgeDiagnostic[]>();
-  readonly devServer = this.resources.add(new DevServerController());
+  private refreshTimer: number | undefined;
 
   async onload(): Promise<void> {
     try {
@@ -79,12 +78,6 @@ export default class RiebeckitePlugin extends Plugin {
         workspaceViewType,
         (leaf) => new RiebeckiteWorkspaceView(leaf, this),
       );
-      this.registerEditorExtension(
-        diagnosticDecorations(() => {
-          const path = this.app.workspace.getActiveFile()?.path;
-          return path ? (this.diagnostics.get(path) ?? []) : [];
-        }),
-      );
       this.registerView(
         publicationViewType,
         (leaf) => new RiebeckitePublicationView(leaf, this),
@@ -92,6 +85,12 @@ export default class RiebeckitePlugin extends Plugin {
       this.registerView(
         diagnosticsViewType,
         (leaf) => new RiebeckiteDiagnosticsView(leaf, this),
+      );
+      this.registerEditorExtension(
+        diagnosticDecorations(() => {
+          const path = this.app.workspace.getActiveFile()?.path;
+          return path ? (this.diagnostics.get(path) ?? []) : [];
+        }),
       );
       this.registerEvent(
         this.app.workspace.on("active-leaf-change", () =>
@@ -105,6 +104,11 @@ export default class RiebeckitePlugin extends Plugin {
         id: "open",
         name: "Open",
         callback: () => void this.openWorkspace(),
+      });
+      this.addCommand({
+        id: "choose-site-project",
+        name: "Choose Site Project",
+        callback: () => void this.chooseSiteProject(),
       });
       this.addCommand({
         id: "start-dev",
@@ -151,25 +155,6 @@ export default class RiebeckitePlugin extends Plugin {
         name: "Open Current Preview in Browser",
         callback: () => void this.openCurrentPreviewInBrowser(),
       });
-      this.addCommand({
-        id: "connect",
-        name: "Connect to Riebeckite",
-        callback: () => void this.connectBridge(),
-      });
-      this.addCommand({
-        id: "disconnect",
-        name: "Disconnect from Riebeckite",
-        callback: () => {
-          this.disconnectBridge();
-          new Notice("Disconnected from Riebeckite.");
-        },
-      });
-      this.addCommand({
-        id: "check-connection",
-        name: "Check Riebeckite Connection",
-        callback: () => void this.checkBridge(),
-      });
-      this.polling.start();
     } catch (error) {
       console.error("Unable to load Riebeckite", error);
       new Notice(
@@ -185,146 +170,124 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async updateSettings(settings: Partial<RiebeckiteSettings>): Promise<void> {
-    const current = activeProfile(this.settings);
-    const profiles =
-      settings.profiles ??
-      (current
-        ? this.settings.profiles.map((profile) =>
-            profile.id === current.id
-              ? {
-                  ...profile,
-                  ...(typeof settings.serverUrl === "string"
-                    ? { serverUrl: settings.serverUrl }
-                    : {}),
-                  ...(typeof settings.bridgeToken === "string"
-                    ? { bridgeToken: settings.bridgeToken }
-                    : {}),
-                }
-              : profile,
-          )
-        : this.settings.profiles);
-    this.settings = parseSettings({ ...this.settings, ...settings, profiles });
+    this.settings = parseSettings({ ...this.settings, ...settings });
     await this.saveData(this.settings);
   }
 
-  async switchProfile(id: string): Promise<void> {
-    this.polling.stop();
-    await this.updateSettings({ activeProfileId: id });
-    this.bridge.disconnect();
+  async switchSite(id: string): Promise<void> {
+    if (!this.settings.sites.some((site) => site.id === id)) return;
+    await this.stopDev();
+    await this.updateSettings({ activeSiteId: id });
     await this.refreshViews();
   }
 
-  disconnectBridge(): void {
-    this.bridge.disconnect();
-    this.polling.stop();
-    void this.refreshViews();
+  async removeSite(id: string): Promise<void> {
+    const sites = this.settings.sites.filter((site) => site.id !== id);
+    if (this.settings.activeSiteId === id) await this.stopDev();
+    await this.updateSettings({ sites, activeSiteId: sites[0]?.id ?? "" });
+    await this.refreshViews();
+  }
+
+  async chooseSiteProject(): Promise<void> {
+    const directory = await chooseDirectory();
+    if (!directory) return;
+    if (!isRiebeckiteProject(directory)) {
+      new Notice(
+        "This folder is not a compatible Riebeckite site project. Choose the folder containing riebeckite.config.ts and its local CLI.",
+      );
+      return;
+    }
+    const existing = this.settings.sites.find(
+      (site) => site.projectDirectory === directory,
+    );
+    if (existing) {
+      await this.switchSite(existing.id);
+      return;
+    }
+    const site: SiteProject = {
+      id: crypto.randomUUID(),
+      displayName: basename(directory) || "Riebeckite site",
+      projectDirectory: directory,
+    };
+    await this.updateSettings({
+      sites: [...this.settings.sites, site],
+      activeSiteId: site.id,
+    });
+    await this.refreshViews();
   }
 
   async connectBridge(silent = false): Promise<BridgeConnectionState> {
-    const profile = activeProfile(this.settings);
-    const state = await this.bridge.connect(
-      profile?.serverUrl ?? this.settings.serverUrl,
-      this.bridgeToken(),
-    );
-    if (state.kind === "connected") {
+    const state = this.devServer.getState();
+    const token = this.devServer.getToken();
+    if (state.kind !== "running" || !token)
+      return { kind: "unavailable", message: "Start Managed Dev to connect." };
+    const connection = await this.bridge.connect(state.serverUrl, token);
+    if (connection.kind === "connected") {
+      const site = activeSite(this.settings);
+      const identity = connection.status.identity;
+      if (!site || !identity || identity.siteId !== state.siteId) {
+        this.bridge.disconnect();
+        return {
+          kind: "unavailable",
+          message: "Site identity could not be verified.",
+        };
+      }
+      if (checkSiteIdentity(site, identity) === "mismatch") {
+        this.bridge.disconnect();
+        return {
+          kind: "unavailable",
+          message: "The running site does not match the selected project.",
+        };
+      }
+      if (checkSiteIdentity(site, identity) === "unrecorded") {
+        await this.updateSettings({
+          sites: this.settings.sites.map((candidate) =>
+            candidate.id === site.id
+              ? {
+                  ...candidate,
+                  siteId: identity.siteId,
+                  contentRootId: identity.contentRootId,
+                }
+              : candidate,
+          ),
+        });
+      }
       this.polling.start();
       await this.refreshViews();
     }
-    if (state.kind === "connected") {
-      const currentProfile = activeProfile(this.settings);
-      const identity = state.status.identity;
-      if (currentProfile && identity) {
-        const identityCheck = checkSiteIdentity(currentProfile, identity);
-        if (identityCheck === "mismatch") {
-          new Notice("This profile may be connected to a different site.");
-        }
-        if (identityCheck === "unrecorded") {
-          await this.updateSettings({
-            profiles: this.settings.profiles.map((candidate) =>
-              candidate.id === currentProfile.id
-                ? {
-                    ...candidate,
-                    siteId: identity.siteId,
-                    contentRootId: identity.contentRootId,
-                    capabilityState: state.status.capabilities,
-                  }
-                : candidate,
-            ),
-          });
-        }
-      }
-    }
-    if (!silent) new Notice(connectionMessage(state));
-    return state;
+    if (!silent && connection.kind !== "connected")
+      new Notice(
+        "Riebeckite could not connect to this managed development session.",
+      );
+    return connection;
   }
 
-  async checkBridge(): Promise<BridgeConnectionState> {
+  disconnectBridge(): void {
     this.polling.stop();
     this.bridge.disconnect();
-    return await this.connectBridge();
-  }
-
-  async testConnection(): Promise<ConnectionTestResult> {
-    const profile = activeProfile(this.settings);
-    const serverUrl = profile?.serverUrl ?? this.settings.serverUrl;
-    const token = this.bridgeToken();
-    if (!isLoopbackServerUrl(serverUrl))
-      return classifyConnectionTest(serverUrl, { kind: "disconnected" });
-    const state = await new BridgeClient((input) => requestUrl(input)).connect(
-      serverUrl,
-      token,
-    );
-    return classifyConnectionTest(serverUrl, state);
+    void this.refreshViews();
   }
 
   bridgeSource(path: string): string | undefined {
-    return mapVaultPath(activeProfile(this.settings), path);
+    return mapVaultPath(activeSite(this.settings), path);
   }
 
   vaultPath(path: string): string | undefined {
-    return mapContentPath(activeProfile(this.settings), path);
+    return mapContentPath(activeSite(this.settings), path);
   }
 
   serverUrl(): string {
-    return activeProfile(this.settings)?.serverUrl ?? this.settings.serverUrl;
+    const state = this.devServer.getState();
+    return state.kind === "running" ? state.serverUrl : "";
   }
 
   bridgeToken(): string {
-    return (
-      this.devServer.getToken() ??
-      activeProfile(this.settings)?.bridgeToken ??
-      this.settings.bridgeToken
-    );
+    return this.devServer.getToken() ?? "";
   }
 
   setDiagnostics(path: string, diagnostics: readonly BridgeDiagnostic[]): void {
     this.diagnostics.set(path, diagnostics);
     refreshDiagnosticDecorations();
-  }
-
-  private async refreshBridgeStatus(): Promise<BridgeConnectionState> {
-    const token = this.bridgeToken();
-    const previousRevision = this.bridge.getRevision();
-    const state =
-      this.bridge.getState().kind === "connected"
-        ? await this.bridge.refreshStatus(token)
-        : await this.connectBridge(true);
-    if (state.kind === "connected") {
-      if (state.status.development.revision !== previousRevision)
-        await this.refreshViews();
-    }
-    return state;
-  }
-
-  private canMutate(): boolean {
-    const profile = activeProfile(this.settings);
-    const state = this.bridge.getState();
-    return !(
-      profile?.siteId &&
-      state.kind === "connected" &&
-      state.status.identity &&
-      checkSiteIdentity(profile, state.status.identity) === "mismatch"
-    );
   }
 
   openSettings(): void {
@@ -359,37 +322,37 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async startDev(): Promise<void> {
-    const profile = activeProfile(this.settings);
-    if (!profile?.siteProjectDirectory) {
-      new Notice(
-        "Configure a site project with a local Riebeckite CLI before starting Dev.",
-      );
+    const site = activeSite(this.settings);
+    if (!site) {
+      new Notice("Choose a Site Project before starting development.");
       return;
     }
-    if (!profile?.managedDevTrusted) {
-      const confirmed = window.confirm(
-        "Start this site's local Riebeckite CLI with `dev`? It receives a temporary Bridge pairing token.",
-      );
-      if (!confirmed) return;
+    if (!site.managedDevTrusted) {
+      if (
+        !window.confirm(
+          `Start Riebeckite development for ${site.displayName}? This runs the local CLI in the selected project.`,
+        )
+      )
+        return;
       await this.updateSettings({
-        profiles: this.settings.profiles.map((candidate) =>
-          candidate.id === profile?.id
+        sites: this.settings.sites.map((candidate) =>
+          candidate.id === site.id
             ? { ...candidate, managedDevTrusted: true }
             : candidate,
         ),
       });
     }
-    if (!this.devServer.start(profile.siteProjectDirectory)) {
+    if (!this.devServer.start(site.projectDirectory)) {
       new Notice(
-        "Configure a site project with a local Riebeckite CLI before starting Dev.",
+        "Riebeckite could not start this site. Confirm that its local CLI and configuration are installed.",
       );
       return;
     }
-    const stop = this.devServer.onChange(() => {
+    const removeListener = this.devServer.onChange(() => {
       const state = this.devServer.getState();
       if (state.kind !== "running") return;
-      stop();
-      void this.connectManagedDev(state.serverUrl);
+      removeListener();
+      void this.connectBridge(true);
     });
   }
 
@@ -399,32 +362,45 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async restartDev(): Promise<void> {
-    const profile = activeProfile(this.settings);
-    await this.stopDev();
-    const wait = () =>
-      new Promise<void>((resolve) => window.setTimeout(resolve, 100));
-    while (this.devServer.getState().kind === "stopping") await wait();
-    if (profile?.siteProjectDirectory) await this.startDev();
+    const site = activeSite(this.settings);
+    if (!site) return;
+    if (!(await this.devServer.stop())) return;
+    this.disconnectBridge();
+    await this.startDev();
   }
 
   async refreshWorkspace(): Promise<void> {
     await this.refreshViews();
   }
 
+  private async refreshBridgeStatus(): Promise<BridgeConnectionState> {
+    const token = this.devServer.getToken();
+    if (!token) return { kind: "disconnected" };
+    const previousRevision = this.bridge.getRevision();
+    const state =
+      this.bridge.getState().kind === "connected"
+        ? await this.bridge.refreshStatus(token)
+        : await this.connectBridge(true);
+    if (
+      state.kind === "connected" &&
+      state.status.development.revision !== previousRevision
+    )
+      await this.refreshViews();
+    return state;
+  }
+
   private async refreshPreviews(): Promise<void> {
-    for (const leaf of this.app.workspace.getLeavesOfType(previewViewType)) {
+    for (const leaf of this.app.workspace.getLeavesOfType(previewViewType))
       await (leaf.view as RiebeckitePreviewView).refresh();
-    }
   }
 
   private async refreshViews(): Promise<void> {
     await this.refreshPreviews();
     for (const type of [publicationViewType, diagnosticsViewType]) {
-      for (const leaf of this.app.workspace.getLeavesOfType(type)) {
+      for (const leaf of this.app.workspace.getLeavesOfType(type))
         await (
           leaf.view as RiebeckitePublicationView | RiebeckiteDiagnosticsView
         ).refresh();
-      }
     }
     for (const leaf of this.app.workspace.getLeavesOfType(workspaceViewType))
       (leaf.view as RiebeckiteWorkspaceView).refresh();
@@ -439,58 +415,65 @@ export default class RiebeckitePlugin extends Plugin {
     }, 150);
   }
 
-  private async openPublication(): Promise<void> {
-    const leaf = this.app.workspace.getRightLeaf(false) as WorkspaceLeaf | null;
-    if (!leaf) return;
-    await leaf.setViewState({ type: publicationViewType, active: true });
-    this.app.workspace.revealLeaf(leaf);
-  }
-
-  private async openDiagnostics(): Promise<void> {
-    const leaf = this.app.workspace.getRightLeaf(false) as WorkspaceLeaf | null;
-    if (!leaf) return;
-    await leaf.setViewState({ type: diagnosticsViewType, active: true });
-    this.app.workspace.revealLeaf(leaf);
-  }
-
   private async openCurrentPreviewInBrowser(): Promise<void> {
-    const file = this.app.workspace.getActiveFile();
-    if (!file || this.bridge.getState().kind !== "connected") return;
-    const source = this.bridgeSource(file.path);
-    if (!source) {
-      new Notice("This note is outside the profile's mapped vault folder.");
-      return;
-    }
+    const file = this.activeMarkdownFile();
+    const source = file ? this.bridgeSource(file.path) : undefined;
+    if (!source || this.bridge.getState().kind !== "connected") return;
     const result = await this.bridge.resolvePage(
       this.serverUrl(),
       this.bridgeToken(),
       source,
     );
-    if (result.kind === "resolved" && result.page.routable) {
+    if (result.kind === "resolved" && result.page.routable)
       window.open(result.previewUrl, "_blank", "noopener");
-    }
-  }
-
-  private async connectManagedDev(serverUrl: string): Promise<void> {
-    const token = this.devServer.getToken();
-    const profile = activeProfile(this.settings);
-    if (!token || !profile) return;
-    await this.updateSettings({
-      profiles: this.settings.profiles.map((candidate) =>
-        candidate.id === profile.id ? { ...candidate, serverUrl } : candidate,
-      ),
-    });
-    const state = await this.connectBridge(true);
-    if (state.kind === "connected") await this.refreshViews();
   }
 }
 
-function connectionMessage(state: BridgeConnectionState): string {
-  return state.kind === "connected"
-    ? `Connected to Riebeckite ${state.status.server.version}.`
-    : state.kind === "disconnected"
-      ? "Disconnected from Riebeckite."
-      : state.kind === "connecting"
-        ? "Connecting to Riebeckite."
-        : state.message;
+function isRiebeckiteProject(directory: string): boolean {
+  return (
+    [
+      "riebeckite.config.ts",
+      "riebeckite.config.js",
+      "riebeckite.config.mjs",
+    ].some((file) => existsSync(join(directory, file))) &&
+    existsSync(
+      join(
+        directory,
+        "node_modules",
+        "@riebeckite",
+        "cli",
+        "bin",
+        "riebeckite.mjs",
+      ),
+    )
+  );
+}
+
+async function chooseDirectory(): Promise<string | undefined> {
+  if (!Platform.isDesktopApp) {
+    new Notice("Site project selection is available in Obsidian Desktop only.");
+    return undefined;
+  }
+  try {
+    const remote = (
+      window as unknown as {
+        require(name: string): {
+          dialog: {
+            showOpenDialog(
+              options: unknown,
+            ): Promise<{ canceled: boolean; filePaths: string[] }>;
+          };
+        };
+      }
+    ).require("@electron/remote");
+    const result = await remote.dialog.showOpenDialog({
+      properties: ["openDirectory"],
+    });
+    return result.canceled ? undefined : result.filePaths[0];
+  } catch {
+    const entered = window.prompt(
+      "Enter the full path of the Riebeckite site project.",
+    );
+    return entered?.trim() || undefined;
+  }
 }
