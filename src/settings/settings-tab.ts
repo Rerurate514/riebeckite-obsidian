@@ -32,11 +32,17 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
       text: "Only loopback Riebeckite development servers can be connected.",
     });
     const profile = activeProfile(this.plugin.settings);
-    new Setting(containerEl)
+    const profiles = this.plugin.settings.profiles;
+    const profileSetting = new Setting(containerEl)
       .setName("Connection profile")
-      .setDesc("Profiles keep pairing credentials separate for each site.")
-      .addDropdown((dropdown) => {
-        for (const candidate of this.plugin.settings.profiles) {
+      .setDesc(
+        profiles.length === 0
+          ? "No profile yet. Select Add to connect this vault to a Riebeckite site."
+          : "Profiles keep pairing credentials separate for each site.",
+      );
+    if (profiles.length > 0) {
+      profileSetting.addDropdown((dropdown) => {
+        for (const candidate of profiles) {
           dropdown.addOption(candidate.id, candidate.displayName);
         }
         dropdown.setValue(profile?.id ?? "").onChange(async (id) => {
@@ -44,7 +50,9 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
           this.connectionTest = undefined;
           this.display();
         });
-      })
+      });
+    }
+    profileSetting
       .addButton((button) =>
         button.setButtonText("Add").onClick(async () => {
           const created = newProfile();
@@ -63,11 +71,11 @@ export class RiebeckiteSettingsTab extends PluginSettingTab {
           .setDisabled(!profile || this.plugin.settings.profiles.length < 2)
           .onClick(async () => {
             if (!profile) return;
-            const profiles = this.plugin.settings.profiles.filter(
+            const remaining = this.plugin.settings.profiles.filter(
               (candidate) => candidate.id !== profile.id,
             );
-            await this.plugin.updateSettings({ profiles });
-            await this.plugin.switchProfile(profiles[0]?.id ?? "");
+            await this.plugin.updateSettings({ profiles: remaining });
+            await this.plugin.switchProfile(remaining[0]?.id ?? "");
             this.connectionTest = undefined;
             this.display();
           }),
