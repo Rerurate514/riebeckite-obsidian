@@ -314,7 +314,8 @@
 
 .riebeckite-impact,
 .riebeckite-seo,
-.riebeckite-logs {
+.riebeckite-logs,
+.riebeckite-review {
   display: grid;
   gap: 12px;
 }
