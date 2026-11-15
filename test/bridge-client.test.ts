@@ -322,6 +322,50 @@ test("does not refresh status while a Bridge request is pending", async () => {
   await page;
 });
 
+test("waits for a status refresh before starting a Bridge request", async () => {
+  let resolveStatus: (() => void) | undefined;
+  let pageRequests = 0;
+  let statusRequests = 0;
+  const client = new BridgeClient(async (input) => {
+    if (input.url.endsWith("/bootstrap"))
+      return response({ origin: "http://127.0.0.1:4567" });
+    if (input.url.endsWith("/v1") && statusRequests++ === 0)
+      return response(connectedStatus);
+    if (input.url.endsWith("/v1"))
+      return new Promise((resolve) => {
+        resolveStatus = () => resolve(response(connectedStatus));
+      });
+    pageRequests += 1;
+    return response({
+      status: "resolved",
+      source: "notes/hello.md",
+      page: "/hello/",
+      visibility: "public",
+      routable: true,
+      discoverable: true,
+      locale: null,
+      publishAt: null,
+      revision: 1,
+      productionUrl: null,
+    });
+  });
+  await client.connect("http://127.0.0.1:3000", "a".repeat(32));
+
+  const refresh = client.refreshStatus("a".repeat(32));
+  const page = client.resolvePage(
+    "http://127.0.0.1:3000",
+    "a".repeat(32),
+    "notes/hello.md",
+  );
+  await Promise.resolve();
+
+  assert.equal(pageRequests, 0);
+  resolveStatus?.();
+  await refresh;
+  await page;
+  assert.equal(pageRequests, 1);
+});
+
 test("reads build impact only when advertised by the Bridge", async () => {
   const client = new BridgeClient(async (input) => {
     if (input.url.endsWith("/bootstrap"))

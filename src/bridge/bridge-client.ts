@@ -146,6 +146,7 @@ export class BridgeClient implements Disposable {
   private generation = 0;
   private privateOrigin: string | undefined;
   private activeRequests = 0;
+  private statusRefresh: Promise<BridgeConnectionState> | undefined;
 
   constructor(
     private readonly request: BridgeRequest,
@@ -182,6 +183,8 @@ export class BridgeClient implements Disposable {
     token: string,
     source: string,
   ): Promise<BridgePageResult> {
+    const statusRefresh = this.statusRefresh;
+    if (statusRefresh) await statusRefresh;
     const origin = this.privateOrigin;
     if (this.disposed || !origin || !isContentPath(source)) {
       return { kind: "unavailable" };
@@ -234,7 +237,24 @@ export class BridgeClient implements Disposable {
     );
   }
 
-  async refreshStatus(token: string): Promise<BridgeConnectionState> {
+  refreshStatus(token: string): Promise<BridgeConnectionState> {
+    if (this.statusRefresh) return this.statusRefresh;
+    const refresh = this.refreshStatusOnce(token);
+    this.statusRefresh = refresh;
+    void refresh.then(
+      () => {
+        if (this.statusRefresh === refresh) this.statusRefresh = undefined;
+      },
+      () => {
+        if (this.statusRefresh === refresh) this.statusRefresh = undefined;
+      },
+    );
+    return refresh;
+  }
+
+  private async refreshStatusOnce(
+    token: string,
+  ): Promise<BridgeConnectionState> {
     const origin = this.privateOrigin;
     if (this.disposed || !origin) return this.state;
     if (this.activeRequests) return this.state;
@@ -332,6 +352,8 @@ export class BridgeClient implements Disposable {
     body: Record<string, unknown>,
     parse: (value: unknown) => T | undefined,
   ): Promise<BridgeMutationResponse<T>> {
+    const statusRefresh = this.statusRefresh;
+    if (statusRefresh) await statusRefresh;
     const origin = this.privateOrigin;
     if (
       this.disposed ||
@@ -377,6 +399,8 @@ export class BridgeClient implements Disposable {
     source: string,
     parse: (value: Record<string, unknown>) => T | undefined,
   ): Promise<BridgeInspectionResult<T>> {
+    const statusRefresh = this.statusRefresh;
+    if (statusRefresh) await statusRefresh;
     const origin = this.privateOrigin;
     if (this.disposed || !origin || !isContentPath(source))
       return { kind: "unavailable" };
