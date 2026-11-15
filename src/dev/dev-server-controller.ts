@@ -96,17 +96,23 @@ export class DevServerController {
       this.fail("Riebeckite did not finish starting within 3 minutes.");
       void this.stop();
     }, 180_000);
-    const child = spawn("node", [command, "dev"], {
-      cwd: projectDirectory,
-      env: {
-        ...process.env,
-        RIEBECKITE_BRIDGE_TOKEN: this.token,
-        RIEBECKITE_MANAGED_DEV_CONTROL_FD: "3",
-        RIEBECKITE_MANAGED_DEV_SESSION: this.sessionId,
-      },
-      stdio: ["ignore", "pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
+    let child: ChildProcess;
+    try {
+      child = spawn("node", [command, "dev"], {
+        cwd: projectDirectory,
+        env: {
+          ...process.env,
+          RIEBECKITE_BRIDGE_TOKEN: this.token,
+          RIEBECKITE_MANAGED_DEV_CONTROL_FD: "3",
+          RIEBECKITE_MANAGED_DEV_SESSION: this.sessionId,
+        },
+        stdio: ["ignore", "pipe", "pipe", "pipe"],
+        windowsHide: true,
+      });
+    } catch {
+      this.fail("Riebeckite could not start this project.");
+      return false;
+    }
     this.process = child;
     child.stdout?.on("data", (data: Buffer) =>
       this.write("stdout", data.toString()),
@@ -121,9 +127,10 @@ export class DevServerController {
       controlBuffer = lines.pop() ?? "";
       for (const line of lines) this.handleControl(line);
     });
-    child.once("error", () =>
-      this.fail("Riebeckite could not start this project."),
-    );
+    child.once("error", () => {
+      this.fail("Riebeckite could not start this project.");
+      void this.stop();
+    });
     child.once("exit", (code, signal) => {
       this.clearStartTimeout();
       const stopping = this.state.kind === "stopping";
@@ -185,17 +192,24 @@ export class DevServerController {
   }
 
   dispose(): void {
+    this.clearStartTimeout();
     void this.stop();
     this.listeners.clear();
   }
 
   private handleControl(line: string): void {
     const event = parseManagedDevEvent(line);
-    if (!event || event.sessionId !== this.sessionId) return;
+    if (
+      !event ||
+      event.sessionId !== this.sessionId ||
+      this.state.kind !== "starting"
+    )
+      return;
     if (event.protocolVersion !== 1) {
       this.fail(
         "This Riebeckite CLI uses an incompatible managed development protocol.",
       );
+      void this.stop();
       return;
     }
     if (event.type === "ready") {
@@ -204,6 +218,7 @@ export class DevServerController {
         !event.capabilities.includes("bridge-v1")
       ) {
         this.fail("This site does not support Obsidian managed development.");
+        void this.stop();
         return;
       }
       this.clearStartTimeout();
@@ -214,6 +229,7 @@ export class DevServerController {
       });
     } else if (event.type === "error") {
       this.fail("Riebeckite could not start this project.");
+      void this.stop();
     }
   }
 

@@ -17,6 +17,12 @@ identity-checked when managed development connects. An optional vault folder
 narrows that mapping. Revision updates refresh plugin views only; they never
 change editor text, cursor, selection, or files.
 
+The workspace includes guided connection recovery, a copyable publish checklist,
+clickable vault outputs in Build Impact, and on-demand scheduled-publication
+scans. The editor menu opens preview, review, and diagnostics for the current
+note. Publication Manager can explicitly scan diagnostics and filter all
+publication, SEO, routing, and scanned diagnostic issues as **Needs attention**.
+
 ## Managed development (Desktop)
 
 Open **Riebeckite: Open**, choose **Site project** in settings, then select

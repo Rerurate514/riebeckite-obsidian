@@ -25,10 +25,18 @@ type Tab =
   | "seo"
   | "logs";
 
+type ScheduledPublication = {
+  path: string;
+  title: string;
+  publishAt: string;
+};
+
 export class RiebeckiteWorkspaceView extends ItemView {
   private tab: Tab = "overview";
   private removeListener: (() => void) | undefined;
   private featureRequest = 0;
+  private scheduled: readonly ScheduledPublication[] | undefined;
+  private scheduleRequest = 0;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -53,6 +61,8 @@ export class RiebeckiteWorkspaceView extends ItemView {
   onClose(): Promise<void> {
     this.removeListener?.();
     this.removeListener = undefined;
+    this.featureRequest += 1;
+    this.scheduleRequest += 1;
     return Promise.resolve();
   }
 
@@ -162,13 +172,124 @@ export class RiebeckiteWorkspaceView extends ItemView {
     const notice = container.createDiv({
       cls: "riebeckite-workspace-notice",
     });
-    notice.createEl("strong", { text: "Read-only integration" });
+    notice.createEl("strong", { text: "Safe mutation is disabled by default" });
     notice.createEl("span", {
-      text: "Start Dev never grants mutation access to your vault.",
+      text: "Start Dev never grants mutation access to your vault. Reviewed edits require separate startup and server-side approval tokens.",
     });
     const settings = container.createEl("button", { text: "Open settings" });
     settings.addClass("riebeckite-workspace-settings");
     settings.onclick = () => this.plugin.openSettings();
+    this.renderConnectionGuide(container);
+    this.renderScheduledPublications(container);
+  }
+
+  private renderConnectionGuide(container: HTMLElement): void {
+    const state = this.plugin.devServer.getState();
+    const bridge = this.plugin.bridge.getState();
+    if (state.kind === "running" && bridge.kind === "connected") return;
+    const guide = container.createDiv({ cls: "riebeckite-workspace-notice" });
+    guide.createEl("strong", { text: "Connection checklist" });
+    if (!activeSite(this.plugin.settings)) {
+      guide.createEl("span", {
+        text: "Choose the local site project that contains the Riebeckite configuration and CLI.",
+      });
+      guide.createEl("button", { text: "Choose site project" }).onclick = () =>
+        void this.plugin.chooseSiteProject();
+      return;
+    }
+    if (state.kind === "failed") {
+      guide.createEl("span", {
+        text: "The development server did not start. Inspect the captured output, then retry.",
+      });
+      guide.createEl("button", { text: "Open logs" }).onclick = () =>
+        this.selectTab("logs");
+      guide.createEl("button", { text: "Retry Start Dev" }).onclick = () =>
+        void this.plugin.startDev();
+      return;
+    }
+    if (state.kind === "running") {
+      guide.createEl("span", {
+        text: "The server is running, but the Bridge is unavailable. Review the site identity and the server output.",
+      });
+      guide.createEl("button", { text: "Open logs" }).onclick = () =>
+        this.selectTab("logs");
+      guide.createEl("button", { text: "Restart Dev" }).onclick = () =>
+        void this.plugin.restartDev();
+      return;
+    }
+    guide.createEl("span", {
+      text: "Start the selected site's local development server to connect its Bridge.",
+    });
+    guide.createEl("button", { text: "Start Dev" }).onclick = () =>
+      void this.plugin.startDev();
+  }
+
+  private renderScheduledPublications(container: HTMLElement): void {
+    const section = container.createDiv({ cls: "riebeckite-schedule" });
+    section.createEl("span", {
+      cls: "riebeckite-workspace-section-label",
+      text: "Upcoming publications",
+    });
+    const scheduled = this.scheduled;
+    if (!scheduled) {
+      section.createEl("p", {
+        text: "Scan the vault when you need an ordered view of scheduled notes.",
+      });
+      section.createEl("button", { text: "Find scheduled notes" }).onclick =
+        () => void this.loadScheduledPublications();
+      return;
+    }
+    if (!scheduled.length) {
+      section.createEl("p", { text: "No scheduled notes found." });
+      section.createEl("button", { text: "Scan again" }).onclick = () =>
+        void this.loadScheduledPublications();
+      return;
+    }
+    const list = section.createEl("div", { cls: "riebeckite-schedule-list" });
+    for (const publication of scheduled) {
+      const button = list.createEl("button", {
+        text: `${publication.publishAt} · ${publication.title}`,
+      });
+      button.onclick = () => void this.plugin.openVaultPath(publication.path);
+    }
+    section.createEl("button", { text: "Scan again" }).onclick = () =>
+      void this.loadScheduledPublications();
+  }
+
+  private async loadScheduledPublications(): Promise<void> {
+    if (!this.plugin.editor.supports("publication")) return;
+    const request = ++this.scheduleRequest;
+    const files = this.plugin.app.vault.getMarkdownFiles();
+    const scheduled: ScheduledPublication[] = [];
+    let index = 0;
+    this.scheduled = [];
+    this.render();
+    const worker = async (): Promise<void> => {
+      while (index < files.length) {
+        const file = files[index++];
+        if (!file) return;
+        const result = await this.plugin.editor.publication(file.path);
+        if (request !== this.scheduleRequest) return;
+        if (
+          result.kind === "resolved" &&
+          result.value.visibility === "scheduled" &&
+          result.value.publishAt
+        )
+          scheduled.push({
+            path: file.path,
+            title: file.basename,
+            publishAt: result.value.publishAt,
+          });
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(4, files.length) }, worker),
+    );
+    if (request !== this.scheduleRequest) return;
+    this.scheduled = scheduled.sort((left, right) =>
+      left.publishAt.localeCompare(right.publishAt),
+    );
+    this.render();
   }
 
   private renderPreview(container: HTMLElement): void {
@@ -514,6 +635,10 @@ export class RiebeckiteWorkspaceView extends ItemView {
     ] as const)
       actions.createEl("button", { text: label }).onclick = () =>
         this.selectTab(tab);
+    actions.createEl("button", { text: "Copy checklist" }).onclick = () =>
+      void navigator.clipboard.writeText(
+        publishReviewChecklist(publication, diagnostics, impact),
+      );
   }
 
   private renderImpact(container: HTMLElement, impact: BridgeImpact): void {
@@ -579,7 +704,8 @@ export class RiebeckiteWorkspaceView extends ItemView {
         cls: "riebeckite-impact-list",
         attr: { role: "list" },
       });
-      for (const output of outputs) renderImpactOutput(list, output, tone);
+      for (const output of outputs)
+        renderImpactOutput(list, output, tone, this.plugin);
     }
   }
 
@@ -740,12 +866,19 @@ function renderImpactOutput(
   container: HTMLElement,
   output: BridgeImpactOutput,
   tone: "changed" | "unchanged" | "removed",
+  plugin: RiebeckitePlugin,
 ): void {
   const item = container.createDiv({
     cls: `riebeckite-impact-item is-${tone}`,
     attr: { role: "listitem" },
   });
   item.createEl("code", { text: output.path });
+  const actions = item.createDiv({ cls: "riebeckite-dev-actions" });
+  actions.createEl("button", { text: "Copy path" }).onclick = () =>
+    void navigator.clipboard.writeText(output.path);
+  if (plugin.app.vault.getAbstractFileByPath(output.path))
+    actions.createEl("button", { text: "Open note" }).onclick = () =>
+      void plugin.openVaultPath(output.path);
   const detail = item.createDiv({ cls: "riebeckite-impact-detail" });
   detail.createEl("span", { text: output.producer });
   const reason = `${impactReasonLabel(output.reason.type)}${output.reason.slug ? `: ${output.reason.slug}` : ""}`;
@@ -757,6 +890,31 @@ function renderImpactOutput(
     item.createEl("small", {
       text: `Dependencies: ${dependencies.join(", ")}`,
     });
+}
+
+function publishReviewChecklist(
+  publication: BridgePublication,
+  diagnostics: Awaited<ReturnType<RiebeckitePlugin["editor"]["diagnostics"]>>,
+  impact: Awaited<ReturnType<RiebeckitePlugin["editor"]["impact"]>>,
+): string {
+  return [
+    "# Publish review",
+    `- Publication: ${publication.visibility}`,
+    `- Routable: ${publication.routable ? "yes" : "no"}`,
+    `- SEO: ${publication.seo?.issues.length ?? 0} issue(s)`,
+    `- Diagnostics: ${
+      diagnostics.kind === "resolved"
+        ? `${diagnostics.value.length} issue(s)`
+        : "unavailable"
+    }`,
+    `- Build impact: ${
+      impact.kind === "resolved"
+        ? impact.value.fullRegenerationRequired
+          ? "full regeneration required"
+          : `${impact.value.affectedOutputs.length} changed output(s)`
+        : "unavailable"
+    }`,
+  ].join("\n");
 }
 
 function serverStatus(

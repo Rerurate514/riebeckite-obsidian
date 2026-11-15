@@ -315,9 +315,22 @@
 .riebeckite-impact,
 .riebeckite-seo,
 .riebeckite-logs,
-.riebeckite-review {
+.riebeckite-review,
+.riebeckite-schedule {
   display: grid;
   gap: 12px;
+}
+
+.riebeckite-schedule-list {
+  display: grid;
+  gap: 4px;
+}
+
+.riebeckite-schedule-list button {
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .riebeckite-impact-overview {

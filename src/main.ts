@@ -100,6 +100,26 @@ export default class RiebeckitePlugin extends Plugin {
       this.registerEvent(
         this.app.vault.on("modify", () => this.scheduleRefreshViews()),
       );
+      this.registerEvent(
+        this.app.workspace.on("editor-menu", (menu, _editor, view) => {
+          if (view.file?.extension !== "md") return;
+          menu.addItem((item) =>
+            item
+              .setTitle("Riebeckite: Open Live Preview")
+              .onClick(() => void this.openWorkspace("preview")),
+          );
+          menu.addItem((item) =>
+            item
+              .setTitle("Riebeckite: Open Publish Review")
+              .onClick(() => void this.openWorkspace("review")),
+          );
+          menu.addItem((item) =>
+            item
+              .setTitle("Riebeckite: Refresh Diagnostics")
+              .onClick(() => void this.openWorkspace("diagnostics")),
+          );
+        }),
+      );
       this.addCommand({
         id: "open",
         name: "Open",
@@ -326,6 +346,12 @@ export default class RiebeckitePlugin extends Plugin {
               column: Math.max(0, (diagnostic.source.column ?? 1) - 1),
             },
     });
+  }
+
+  async openVaultPath(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return;
+    await this.app.workspace.getLeaf(false).openFile(file);
   }
 
   openSettings(): void {

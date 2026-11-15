@@ -14,17 +14,19 @@ export type PublicationFilter =
   | "scheduled"
   | "unlisted"
   | "not-routable"
-  | "issues";
+  | "issues"
+  | "needs-attention";
 
 export function filterPublications(
   rows: readonly PublicationRow[],
   filter: PublicationFilter,
   query: string,
+  diagnosticSummaries: ReadonlyMap<string, string> = new Map(),
 ): PublicationRow[] {
   const needle = query.trim().toLocaleLowerCase();
   return rows.filter((row) => {
     const publication = row.publication;
-    if (!matchesFilter(row, filter)) return false;
+    if (!matchesFilter(row, filter, diagnosticSummaries)) return false;
     return (
       !needle ||
       [
@@ -71,10 +73,22 @@ export function impactReasonLabel(type: string): string {
 function matchesFilter(
   row: PublicationRow,
   filter: PublicationFilter,
+  diagnosticSummaries: ReadonlyMap<string, string>,
 ): boolean {
   const publication = row.publication;
   if (filter === "all") return true;
   if (filter === "issues") return row.state !== "resolved";
+  if (filter === "needs-attention")
+    return (
+      row.state !== "resolved" ||
+      publication?.routable === false ||
+      (publication?.seo?.issues.length ?? 0) > 0 ||
+      hasDiagnosticIssues(diagnosticSummaries.get(row.path))
+    );
   if (filter === "not-routable") return publication?.routable === false;
   return publication?.visibility === filter;
+}
+
+function hasDiagnosticIssues(summary: string | undefined): boolean {
+  return summary !== undefined && summary !== "no issues";
 }

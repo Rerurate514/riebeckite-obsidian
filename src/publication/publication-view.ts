@@ -83,6 +83,14 @@ export class RiebeckitePublicationView extends ItemView {
     const request = this.requests.begin();
     const files = this.app.vault.getMarkdownFiles();
     this.visibleRows = 100;
+    const paths = new Set(files.map((file) => file.path));
+    for (const path of this.rows.keys()) {
+      if (paths.has(path)) continue;
+      this.rows.delete(path);
+      this.diagnosticSummaries.delete(path);
+      this.impacts.delete(path);
+      if (this.selectedPath === path) this.selectedPath = undefined;
+    }
     for (const file of files) {
       this.rows.set(file.path, {
         path: file.path,
@@ -108,6 +116,39 @@ export class RiebeckitePublicationView extends ItemView {
       Array.from({ length: Math.min(4, files.length) }, worker),
     );
     if (this.requests.isCurrent(request)) this.render();
+  }
+
+  private async scanQualityIssues(): Promise<void> {
+    if (!this.plugin.editor.supports("diagnostics")) return;
+    await this.refreshVault();
+    const request = this.diagnosticRequests.begin();
+    const paths = [...this.rows.keys()];
+    this.render(`Scanning document diagnostics… 0/${paths.length}`);
+    let index = 0;
+    const worker = async (): Promise<void> => {
+      while (index < paths.length) {
+        const path = paths[index++];
+        if (!path) return;
+        const result = await this.plugin.editor.diagnostics(path);
+        if (!this.diagnosticRequests.isCurrent(request)) return;
+        this.diagnosticSummaries.set(
+          path,
+          result.kind === "resolved"
+            ? result.value.length
+              ? `${result.value.length} issue(s)`
+              : "no issues"
+            : "not available",
+        );
+        if (index % 25 === 0)
+          this.render(
+            `Scanning document diagnostics… ${index}/${paths.length}`,
+          );
+      }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(4, paths.length) }, worker),
+    );
+    if (this.diagnosticRequests.isCurrent(request)) this.render();
   }
 
   private async saveFilter(): Promise<void> {
@@ -191,6 +232,9 @@ export class RiebeckitePublicationView extends ItemView {
     };
     controls.createEl("button", { text: "Refresh vault" }).onclick = () =>
       void this.refreshVault();
+    if (this.plugin.editor.supports("diagnostics"))
+      controls.createEl("button", { text: "Scan quality issues" }).onclick =
+        () => void this.scanQualityIssues();
     const saved = controls.createEl("select", {
       attr: { "aria-label": "Saved publication filters" },
     });
@@ -222,6 +266,7 @@ export class RiebeckitePublicationView extends ItemView {
       [...this.rows.values()],
       this.filter,
       this.query,
+      this.diagnosticSummaries,
     );
     if (!rows.length) {
       container.createEl("p", { text: "No publication data to display." });
@@ -281,12 +326,7 @@ export class RiebeckitePublicationView extends ItemView {
       ["Canonical URL", publication.canonicalUrl ?? "not supplied"],
       ["Revision", String(publication.revision)],
       ["Reasons", publication.reasons.join("; ")],
-      [
-        "Diagnostics",
-        this.diagnosticSummaries.get(
-          this.plugin.bridgeSource(row.path) ?? "",
-        ) ?? "not loaded",
-      ],
+      ["Diagnostics", this.diagnosticSummaries.get(row.path) ?? "not scanned"],
     ]) {
       details.createEl("p", { text: `${label}: ${value}` });
     }
@@ -483,7 +523,7 @@ export class RiebeckitePublicationView extends ItemView {
     )
       return;
     this.diagnosticSummaries.set(
-      this.plugin.bridgeSource(path) ?? "",
+      path,
       result.kind === "resolved"
         ? result.value.length
           ? `${result.value.length} issue(s)`
@@ -548,6 +588,7 @@ const filters: readonly { value: PublicationFilter; label: string }[] = [
   { value: "unlisted", label: "Unlisted" },
   { value: "not-routable", label: "Not routable" },
   { value: "issues", label: "Issues" },
+  { value: "needs-attention", label: "Needs attention" },
 ];
 
 function toRow(

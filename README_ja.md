@@ -15,6 +15,11 @@ Manager、Document Diagnostics、Build Impact、SEO、ノート単位のPublish 
 照合します。revision更新ではプラグインのViewだけを更新し、編集中のエディタ本文・カーソル・選択・ファイルは
 変更しません。
 
+ワークスペースには接続復旧のガイド、コピー可能なPublish Reviewチェックリスト、Build ImpactからVault内ノートを
+開く操作、必要なときだけ実行するスケジュール公開の走査があります。エディタのコンテキストメニューからは、
+現在のノートのPreview、Review、Diagnosticsを開けます。Publication ManagerではDiagnosticsを明示的に走査し、
+公開状態、SEO、routing、走査済みDiagnosticsの問題を**Needs attention**として絞り込めます。
+
 ## 管理された開発（Desktop）
 
 **Riebeckite: Open** を実行し、設定で **Site project** を選んでから **Start Dev** を選びます。

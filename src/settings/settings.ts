@@ -23,7 +23,8 @@ export type SavedPublicationFilter = {
     | "scheduled"
     | "unlisted"
     | "not-routable"
-    | "issues";
+    | "issues"
+    | "needs-attention";
   readonly query: string;
 };
 
@@ -136,6 +137,7 @@ function parseSavedPublicationFilter(value: unknown): SavedPublicationFilter[] {
       "unlisted",
       "not-routable",
       "issues",
+      "needs-attention",
     ].includes(String(filter))
     ? [{ name, filter: filter as SavedPublicationFilter["filter"], query }]
     : [];

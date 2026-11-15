@@ -42,6 +42,35 @@ test("filters publication rows locally without a new Bridge request", () => {
   );
 });
 
+test("finds publication, SEO, and diagnostic issues in the attention filter", () => {
+  const [publicRow, ...otherRows] = rows;
+  assert.ok(publicRow?.publication);
+  const rowsWithSeo = [
+    {
+      ...publicRow,
+      publication: {
+        ...publicRow.publication,
+        seo: {
+          title: "Public",
+          description: null,
+          canonicalUrl: null,
+          indexable: true,
+          issues: ["MISSING_DESCRIPTION"],
+        },
+      },
+    },
+    ...otherRows,
+  ];
+  const diagnostics = new Map([["notes/draft.md", "2 issue(s)"]]);
+
+  assert.deepEqual(
+    filterPublications(rowsWithSeo, "needs-attention", "", diagnostics).map(
+      (row) => row.path,
+    ),
+    ["notes/public.md", "notes/draft.md", "notes/missing.md"],
+  );
+});
+
 test("maps known impact reasons and preserves unknown types", () => {
   assert.equal(impactReasonLabel("content"), "コンテンツの変更");
   assert.equal(impactReasonLabel("unavailable"), "理由不明");
