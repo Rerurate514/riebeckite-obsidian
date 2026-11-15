@@ -145,6 +145,7 @@ export class BridgeClient implements Disposable {
   private disposed = false;
   private generation = 0;
   private privateOrigin: string | undefined;
+  private activeRequests = 0;
 
   constructor(
     private readonly request: BridgeRequest,
@@ -236,6 +237,7 @@ export class BridgeClient implements Disposable {
   async refreshStatus(token: string): Promise<BridgeConnectionState> {
     const origin = this.privateOrigin;
     if (this.disposed || !origin) return this.state;
+    if (this.activeRequests) return this.state;
     const generation = this.generation;
     try {
       const response = await this.requestWithTimeout({
@@ -511,6 +513,7 @@ export class BridgeClient implements Disposable {
     input: Parameters<BridgeRequest>[0],
   ): Promise<Awaited<ReturnType<BridgeRequest>>> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
+    this.activeRequests += 1;
     try {
       return await Promise.race([
         this.request(input),
@@ -523,6 +526,7 @@ export class BridgeClient implements Disposable {
       ]);
     } finally {
       if (timeout) clearTimeout(timeout);
+      this.activeRequests -= 1;
     }
   }
 }

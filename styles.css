@@ -248,6 +248,42 @@
   overflow-wrap: anywhere;
 }
 
+.riebeckite-publication {
+  display: grid;
+  gap: 16px;
+}
+
+.riebeckite-publication-settings {
+  display: grid;
+  gap: 8px;
+}
+
+.riebeckite-publication-list {
+  display: grid;
+  margin: 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.riebeckite-publication-detail {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.45fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.riebeckite-publication-detail dt {
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: var(--font-semibold);
+}
+
+.riebeckite-publication-detail dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .riebeckite-workspace-panel pre {
   max-width: 100%;
   overflow-x: auto;

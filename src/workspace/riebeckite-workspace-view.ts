@@ -347,14 +347,38 @@ export class RiebeckiteWorkspaceView extends ItemView {
     }
     const publication = result.value;
     if (this.tab === "publication") {
-      for (const [label, value] of [
-        ["Visibility", publication.visibility],
-        ["Public location", publication.permalink],
-        ["Routable", String(publication.routable)],
-        ["Discoverable", String(publication.discoverable)],
-        ["Publish at", publication.publishAt ?? "not scheduled"],
-      ])
-        container.createEl("p", { text: `${label}: ${value}` });
+      const details = container.createDiv({
+        cls: "riebeckite-publication",
+      });
+      renderStatusRow(details, publicationStatus(publication.visibility));
+      const settings = details.createDiv({
+        cls: "riebeckite-publication-settings",
+      });
+      settings.createEl("span", {
+        cls: "riebeckite-workspace-section-label",
+        text: "Publishing details",
+      });
+      const list = settings.createEl("dl", {
+        cls: "riebeckite-publication-list",
+      });
+      renderPublicationDetail(list, "Public location", publication.permalink);
+      renderPublicationDetail(
+        list,
+        "Routing",
+        publication.routable ? "Available at this location" : "Not routable",
+      );
+      renderPublicationDetail(
+        list,
+        "Discovery",
+        publication.discoverable
+          ? "Included in discovery"
+          : "Excluded from discovery",
+      );
+      renderPublicationDetail(
+        list,
+        "Publishing",
+        publication.publishAt ?? "Not scheduled",
+      );
       return;
     }
     if (this.tab === "seo") {
@@ -419,6 +443,44 @@ function renderStatusRow(container: HTMLElement, row: StatusRow): void {
   heading.createSpan({ text: row.label });
   card.createEl("strong", { text: row.text });
   if (row.detail) card.createEl("small", { text: row.detail });
+}
+
+function publicationStatus(
+  visibility: "public" | "unlisted" | "draft" | "scheduled",
+): StatusRow {
+  if (visibility === "public")
+    return {
+      label: "Publication status",
+      tone: "ok",
+      text: "Public",
+      detail: "This document is available to visitors.",
+    };
+  if (visibility === "scheduled")
+    return {
+      label: "Publication status",
+      tone: "busy",
+      text: "Scheduled",
+      detail: "This document will become public at its scheduled time.",
+    };
+  return {
+    label: "Publication status",
+    tone: "idle",
+    text: visibility === "unlisted" ? "Unlisted" : "Draft",
+    detail:
+      visibility === "unlisted"
+        ? "Available by direct link, but excluded from discovery."
+        : "Not available to visitors.",
+  };
+}
+
+function renderPublicationDetail(
+  list: HTMLDListElement,
+  label: string,
+  value: string,
+): void {
+  const row = list.createDiv({ cls: "riebeckite-publication-detail" });
+  row.createEl("dt", { text: label });
+  row.createEl("dd", { text: value });
 }
 
 function serverStatus(
