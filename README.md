@@ -42,7 +42,7 @@ this managed integration does not supply mutation credentials or write files.
 
 1. Build the plugin with `pnpm build`.
 2. Create `<vault>/.obsidian/plugins/riebeckite/`.
-3. Copy `main.js` and `manifest.json` into that directory.
+3. Copy `main.js`, `manifest.json`, and `styles.css` into that directory.
 4. In Obsidian, enable **Riebeckite** under **Community plugins**.
 
 ## Development
@@ -55,7 +55,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-`pnpm dev` watches `src/main.ts` and writes `main.js`. Link or copy the two
+`pnpm dev` watches `src/main.ts` and writes `main.js`. Link or copy the three
 manual-install files into a development vault, then reload the plugin in
 Obsidian after a rebuild.
 
@@ -139,7 +139,8 @@ verification remains required before release.
    `versions.json` together.
 3. Run `pnpm build:release`.
 4. Create and push the matching `v<version>` tag. The release workflow verifies
-   the tag, then uploads `main.js` and `manifest.json` to the GitHub Release.
+   the tag, then uploads `main.js`, `manifest.json`, and `styles.css` to the
+   GitHub Release.
 5. Submit the repository to Obsidian Community Plugins only after a manual
    Obsidian verification and review of the current submission requirements.
 

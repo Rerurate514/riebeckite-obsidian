@@ -18,6 +18,7 @@ test("release validation accepts required non-empty plugin files", async () => {
   const directory = await mkdtemp(join(tmpdir(), "riebeckite-obsidian-"));
   await writeFile(join(directory, "manifest.json"), "{}");
   await writeFile(join(directory, "main.js"), 'require("obsidian");');
+  await writeFile(join(directory, "styles.css"), "");
 
   assert.deepEqual(await validateReleaseArtifact(directory), []);
 });

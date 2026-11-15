@@ -30,4 +30,4 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" main.js manifest.json --title "Riebeckite $GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css --title "Riebeckite $GITHUB_REF_NAME" --generate-notes --verify-tag

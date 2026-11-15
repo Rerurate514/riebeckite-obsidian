@@ -37,7 +37,7 @@ Safe Mutationはサーバー側で保護されたままですが、この管理�
 
 1. `pnpm build` でプラグインをビルドします。
 2. `<vault>/.obsidian/plugins/riebeckite/` を作成します。
-3. `main.js` と `manifest.json` をそのディレクトリへコピーします。
+3. `main.js`、`manifest.json`、`styles.css` をそのディレクトリへコピーします。
 4. Obsidianの **Community plugins** で **Riebeckite** を有効にします。
 
 ## 開発方法
@@ -51,7 +51,7 @@ pnpm dev
 ```
 
 `pnpm dev` は `src/main.ts` を監視し、`main.js` を出力します。手動インストールに必要な
-2ファイルを開発用Vaultへリンクまたはコピーし、再ビルド後にObsidianでプラグインを
+3ファイルを開発用Vaultへリンクまたはコピーし、再ビルド後にObsidianでプラグインを
 再読み込みしてください。
 
 ### コマンド
@@ -123,7 +123,7 @@ Bridge認証情報と短時間だけ有効な独立したサーバー側承認�
 2. `pnpm sync:version` を実行し、`package.json`、`manifest.json`、`versions.json` を同じコミットに含めます。
 3. `pnpm build:release` を実行します。
 4. 対応する `v<version>` タグを作成してpushします。Releaseワークフローはタグを検証した後、
-   `main.js` と `manifest.json` をGitHub Releaseに配置します。
+   `main.js`、`manifest.json`、`styles.css` をGitHub Releaseに配置します。
 5. Obsidian本体で手動検証し、その時点の申請要件を確認してからCommunity Pluginsへ申請します。
 
 このワークフローはnpm公開およびObsidianディレクトリへの申請を行いません。

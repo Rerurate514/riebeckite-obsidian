@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 export async function validateReleaseArtifact(directory = ".") {
-  const requiredFiles = ["main.js", "manifest.json"];
+  const requiredFiles = ["main.js", "manifest.json", "styles.css"];
   const errors = [];
   for (const file of requiredFiles) {
     try {
