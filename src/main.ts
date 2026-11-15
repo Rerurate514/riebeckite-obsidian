@@ -14,6 +14,7 @@ import type {
 } from "./bridge/bridge-client";
 import { BridgeClient } from "./bridge/bridge-client";
 import { EditorApi } from "./bridge/editor-api";
+import { localBridgeRequest } from "./bridge/local-request";
 import { DevServerController } from "./dev/dev-server-controller";
 import {
   diagnosticDecorations,
@@ -49,9 +50,7 @@ import {
 export default class RiebeckitePlugin extends Plugin {
   settings: RiebeckiteSettings = defaultSettings;
   private readonly resources = new ResourceRegistry();
-  readonly bridge = this.resources.add(
-    new BridgeClient((input) => requestUrl(input)),
-  );
+  readonly bridge = this.resources.add(new BridgeClient(localBridgeRequest));
   readonly devServer = this.resources.add(new DevServerController());
   readonly editor = new EditorApi(
     this.bridge,
