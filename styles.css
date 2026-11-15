@@ -1,0 +1,299 @@
+.workspace-leaf-content[data-type="riebeckite-workspace"] .view-content {
+  padding: 16px;
+  overflow-x: hidden;
+}
+
+.riebeckite-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  color: var(--text-normal);
+}
+
+.riebeckite-workspace-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.riebeckite-workspace h4 {
+  margin: 0;
+  font-size: 1.35em;
+}
+
+.riebeckite-workspace-identity {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+
+.riebeckite-workspace-identity-label,
+.riebeckite-workspace-section-label {
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.riebeckite-workspace-identity-detail {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+}
+
+.riebeckite-dev-status {
+  display: grid;
+  gap: 8px;
+}
+
+.riebeckite-dev-status-row {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  padding: 12px 12px 12px 16px;
+  overflow: hidden;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+
+.riebeckite-dev-status-row::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--text-muted);
+  content: "";
+}
+
+.riebeckite-dev-status-row.is-ok::before {
+  background: var(--color-green);
+}
+
+.riebeckite-dev-status-row.is-busy::before {
+  background: var(--color-yellow);
+}
+
+.riebeckite-dev-status-row.is-error::before {
+  background: var(--color-red);
+}
+
+.riebeckite-dev-status-heading {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.riebeckite-dev-status-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.is-ok .riebeckite-dev-status-indicator {
+  background: var(--color-green);
+}
+
+.is-busy .riebeckite-dev-status-indicator {
+  background: var(--color-yellow);
+}
+
+.is-error .riebeckite-dev-status-indicator {
+  background: var(--color-red);
+}
+
+.riebeckite-dev-status-row strong {
+  font-size: var(--font-ui-medium);
+}
+
+.riebeckite-dev-status-row small {
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.riebeckite-dev-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.riebeckite-workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  padding-bottom: 8px;
+  overflow: visible;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.riebeckite-workspace-tabs button {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: none;
+}
+
+.riebeckite-workspace-tabs button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.riebeckite-workspace-tabs button[aria-selected="true"] {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.riebeckite-workspace-panel {
+  min-width: 0;
+}
+
+.riebeckite-diagnostics {
+  display: grid;
+  gap: 12px;
+}
+
+.riebeckite-diagnostics-header {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+}
+
+.riebeckite-diagnostics-header > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.riebeckite-diagnostics-header strong {
+  font-size: var(--font-ui-medium);
+}
+
+.riebeckite-diagnostics-header small,
+.riebeckite-diagnostic-item small {
+  color: var(--text-muted);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.riebeckite-diagnostics-header button {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.riebeckite-diagnostic-list {
+  display: grid;
+  gap: 8px;
+}
+
+.riebeckite-diagnostic-item {
+  display: grid;
+  gap: 5px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--text-muted);
+  background: var(--background-secondary);
+}
+
+.riebeckite-diagnostic-item.is-error {
+  border-left-color: var(--color-red);
+}
+
+.riebeckite-diagnostic-item.is-warning {
+  border-left-color: var(--color-yellow);
+}
+
+.riebeckite-diagnostic-item.is-info {
+  border-left-color: var(--color-blue);
+}
+
+.riebeckite-diagnostic-heading {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.riebeckite-diagnostic-severity {
+  padding: 1px 5px;
+  border-radius: var(--radius-s);
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.riebeckite-diagnostic-heading code {
+  overflow-wrap: anywhere;
+}
+
+.riebeckite-workspace-panel pre {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.riebeckite-workspace-document,
+.riebeckite-workspace-notice {
+  display: grid;
+  gap: 6px;
+}
+
+.riebeckite-workspace-document strong {
+  overflow-wrap: anywhere;
+}
+
+.riebeckite-workspace-document small {
+  color: var(--text-muted);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.riebeckite-workspace-notice {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-blue);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+  line-height: 1.45;
+}
+
+.riebeckite-workspace-notice strong {
+  color: var(--text-normal);
+}
+
+.riebeckite-workspace-settings {
+  margin-top: 16px;
+}
+
+.riebeckite-preview-frame {
+  width: 100%;
+  min-height: 420px;
+  margin-top: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+}

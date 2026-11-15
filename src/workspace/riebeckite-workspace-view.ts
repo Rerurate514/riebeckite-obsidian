@@ -1,4 +1,6 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
+import type { BridgeConnectionState } from "../bridge/bridge-client";
+import type { DevServerState } from "../dev/dev-server-controller";
 import type RiebeckitePlugin from "../main";
 import { activeSite } from "../settings/settings";
 
@@ -57,17 +59,26 @@ export class RiebeckiteWorkspaceView extends ItemView {
     const container = this.contentEl;
     container.empty();
     const site = activeSite(this.plugin.settings);
-    container.createEl("h4", { text: "Riebeckite" });
-    const identity = container.createDiv({
+    container.addClass("riebeckite-workspace");
+    const header = container.createDiv({
+      cls: "riebeckite-workspace-header",
+    });
+    header.createEl("h4", { text: "Riebeckite" });
+    const identity = header.createDiv({
       cls: "riebeckite-workspace-identity",
     });
-    identity.createEl("div", {
-      text: `Site: ${site?.displayName ?? "Not configured"}`,
+    identity.createEl("span", {
+      cls: "riebeckite-workspace-identity-label",
+      text: "Site",
     });
-    identity.createEl("small", {
-      text: `Docs: ${site?.vaultFolder ?? "This vault"}`,
+    identity.createEl("strong", {
+      text: site?.displayName ?? "Not configured",
     });
-    this.renderServerControls(container, site?.projectDirectory);
+    identity.createEl("span", {
+      cls: "riebeckite-workspace-identity-detail",
+      text: `Docs · ${site?.vaultFolder ?? "This vault"}`,
+    });
+    this.renderServerControls(header, site?.projectDirectory);
     const navigation = container.createDiv({
       cls: "riebeckite-workspace-tabs",
       attr: { role: "tablist", "aria-label": "Riebeckite" },
@@ -94,8 +105,11 @@ export class RiebeckiteWorkspaceView extends ItemView {
     directory: string | undefined,
   ): void {
     const state = this.plugin.devServer.getState();
-    const status = container.createEl("p", { text: serverStatus(state) });
-    status.addClass("riebeckite-dev-status");
+    const status = container.createDiv({ cls: "riebeckite-dev-status" });
+    const logs = this.plugin.devServer.logs();
+    const lastLog = logs[logs.length - 1]?.text;
+    renderStatusRow(status, serverStatus(state, lastLog));
+    renderStatusRow(status, bridgeStatus(state, this.plugin.bridge.getState()));
     const actions = container.createDiv({ cls: "riebeckite-dev-actions" });
     if (
       state.kind === "running" ||
@@ -115,27 +129,36 @@ export class RiebeckiteWorkspaceView extends ItemView {
       });
       start.disabled = !directory;
       start.onclick = () => void this.plugin.startDev();
-      if (!directory)
-        container.createEl("p", {
-          text: "Choose a Site Project before starting.",
-        });
     }
   }
 
   private renderOverview(container: HTMLElement): void {
-    const state = this.plugin.bridge.getState();
     const file = this.plugin.activeMarkdownFile();
-    container.createEl("p", {
-      text: `Bridge: ${state.kind === "connected" ? "Connected" : state.kind}`,
+    const document = container.createDiv({
+      cls: "riebeckite-workspace-document",
     });
-    container.createEl("p", {
-      text: `Current note: ${file?.path ?? "No Markdown note selected"}`,
+    document.createEl("span", {
+      cls: "riebeckite-workspace-section-label",
+      text: "Current document",
     });
-    container.createEl("p", {
-      text: "Mutation access is never granted by Start Dev.",
+    document.createEl("strong", {
+      text: file?.basename ?? "No Markdown note selected",
     });
-    container.createEl("button", { text: "Open settings" }).onclick = () =>
-      this.plugin.openSettings();
+    document.createEl("small", {
+      text:
+        file?.path ??
+        "Open a Markdown note to access its preview and metadata.",
+    });
+    const notice = container.createDiv({
+      cls: "riebeckite-workspace-notice",
+    });
+    notice.createEl("strong", { text: "Read-only integration" });
+    notice.createEl("span", {
+      text: "Start Dev never grants mutation access to your vault.",
+    });
+    const settings = container.createEl("button", { text: "Open settings" });
+    settings.addClass("riebeckite-workspace-settings");
+    settings.onclick = () => this.plugin.openSettings();
   }
 
   private renderPreview(container: HTMLElement): void {
@@ -210,19 +233,87 @@ export class RiebeckiteWorkspaceView extends ItemView {
       if (!this.isCurrentFeatureRequest(request, container)) return;
       container.empty();
       if (result.kind !== "resolved") {
-        container.createEl("p", { text: "Diagnostics are unavailable." });
+        const notice = container.createDiv({
+          cls: "riebeckite-workspace-notice",
+        });
+        notice.createEl("strong", { text: "Diagnostics unavailable" });
+        notice.createEl("span", {
+          text: "The connected site could not inspect this document.",
+        });
         return;
       }
-      container.createEl("button", { text: "Refresh" }).onclick = () =>
+      const diagnostics = container.createDiv({
+        cls: "riebeckite-diagnostics",
+      });
+      const header = diagnostics.createDiv({
+        cls: "riebeckite-diagnostics-header",
+      });
+      const summary = header.createDiv();
+      summary.createEl("span", {
+        cls: "riebeckite-workspace-section-label",
+        text: "Document diagnostics",
+      });
+      summary.createEl("strong", {
+        text: result.value.length
+          ? `${result.value.length} issue${result.value.length === 1 ? "" : "s"}`
+          : "No issues",
+      });
+      summary.createEl("small", { text: file.path });
+      header.createEl("button", { text: "Refresh" }).onclick = () =>
         this.render();
       if (!result.value.length) {
-        container.createEl("p", { text: "No issues." });
+        renderStatusRow(diagnostics, {
+          label: "Status",
+          tone: "ok",
+          text: "No issues found",
+          detail: "This document passed the available Riebeckite checks.",
+        });
         return;
       }
+      const list = diagnostics.createDiv({
+        cls: "riebeckite-diagnostic-list",
+        attr: { role: "list" },
+      });
       for (const diagnostic of result.value) {
-        container.createEl("p", {
-          text: `${diagnostic.severity.toUpperCase()} ${diagnostic.code}: ${diagnostic.message}`,
+        const item = list.createDiv({
+          cls: `riebeckite-diagnostic-item is-${diagnostic.severity}`,
+          attr: { role: "listitem" },
         });
+        const heading = item.createDiv({
+          cls: "riebeckite-diagnostic-heading",
+        });
+        heading.createSpan({
+          cls: "riebeckite-diagnostic-severity",
+          text: diagnostic.severity,
+        });
+        heading.createEl("code", { text: diagnostic.code });
+        item.createEl("strong", { text: diagnostic.message });
+        const location = diagnostic.source
+          ? [
+              diagnostic.source.path,
+              diagnostic.source.line === undefined
+                ? undefined
+                : `line ${diagnostic.source.line}`,
+              diagnostic.source.column === undefined
+                ? undefined
+                : `column ${diagnostic.source.column}`,
+            ]
+              .filter((part): part is string => part !== undefined)
+              .join(" · ")
+          : undefined;
+        item.createEl("small", {
+          text: location
+            ? `${diagnostic.category} · ${location}`
+            : diagnostic.category,
+        });
+        if (diagnostic.related.length)
+          item.createEl("small", {
+            text: `Related: ${diagnostic.related.map((related) => related.target).join(", ")}`,
+          });
+        if (diagnostic.fix)
+          item.createEl("small", {
+            text: `Suggested fix: ${diagnostic.fix.description}`,
+          });
       }
       return;
     }
@@ -310,12 +401,116 @@ const tabs: readonly { id: Tab; label: string }[] = [
   { id: "logs", label: "Logs" },
 ];
 
+type StatusTone = "ok" | "busy" | "error" | "idle";
+
+type StatusRow = {
+  label: string;
+  tone: StatusTone;
+  text: string;
+  detail?: string;
+};
+
+function renderStatusRow(container: HTMLElement, row: StatusRow): void {
+  const card = container.createDiv({
+    cls: `riebeckite-dev-status-row is-${row.tone}`,
+  });
+  const heading = card.createDiv({ cls: "riebeckite-dev-status-heading" });
+  heading.createSpan({ cls: "riebeckite-dev-status-indicator" });
+  heading.createSpan({ text: row.label });
+  card.createEl("strong", { text: row.text });
+  if (row.detail) card.createEl("small", { text: row.detail });
+}
+
 function serverStatus(
-  state: ReturnType<RiebeckitePlugin["devServer"]["getState"]>,
-): string {
-  if (state.kind === "running") return `● Running · ${state.serverUrl}`;
-  if (state.kind === "failed") return `● ${state.message}`;
+  state: DevServerState,
+  lastLog: string | undefined,
+): StatusRow {
+  const label = "Development server";
   if (state.kind === "not-configured")
-    return "● Site project is not configured";
-  return `● Development server ${state.kind}`;
+    return {
+      label,
+      tone: "idle",
+      text: "Not configured",
+      detail: "Choose a Site Project in settings, then press Start Dev.",
+    };
+  if (state.kind === "stopped")
+    return {
+      label,
+      tone: "idle",
+      text: "Stopped",
+      detail: "Press Start Dev to build and serve the site from Obsidian.",
+    };
+  if (state.kind === "starting")
+    return {
+      label,
+      tone: "busy",
+      text: "Starting",
+      detail: lastLog
+        ? `Waiting for Riebeckite to report ready. Last output: ${lastLog.slice(0, 120)}`
+        : "Waiting for Riebeckite to report ready. The first start can take a minute or two.",
+    };
+  if (state.kind === "running")
+    return {
+      label,
+      tone: "ok",
+      text: `Running · ${state.serverUrl}`,
+      detail: "This site was started by this plugin and stops when it stops.",
+    };
+  if (state.kind === "stopping")
+    return {
+      label,
+      tone: "busy",
+      text: "Stopping",
+      detail: "Waiting for the site process to exit.",
+    };
+  return {
+    label,
+    tone: "error",
+    text: "Failed",
+    detail: `${state.message} Open the Logs tab for the full output, then press Start Dev to retry.`,
+  };
+}
+
+function bridgeStatus(
+  server: DevServerState,
+  bridge: BridgeConnectionState,
+): StatusRow {
+  const label = "Bridge";
+  if (bridge.kind === "connected")
+    return {
+      label,
+      tone: "ok",
+      text: "Connected",
+      detail: `Riebeckite ${bridge.status.server.version}.`,
+    };
+  if (bridge.kind === "connecting")
+    return {
+      label,
+      tone: "busy",
+      text: "Connecting",
+      detail: "Verifying the running site identity.",
+    };
+  if (bridge.kind === "disconnected")
+    return {
+      label,
+      tone: "idle",
+      text: "Not connected",
+      detail:
+        server.kind === "running"
+          ? "The site is running but the Bridge is not connected. Check the Logs tab."
+          : "Start Dev connects the Bridge automatically.",
+    };
+  return {
+    label,
+    tone: "error",
+    text:
+      bridge.kind === "incompatible"
+        ? "Incompatible site"
+        : bridge.kind === "unauthorized"
+          ? "Token rejected"
+          : bridge.kind === "unavailable"
+            ? "Unavailable"
+            : "Error",
+    detail: bridge.message,
+  };
 }

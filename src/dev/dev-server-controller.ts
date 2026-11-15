@@ -87,11 +87,9 @@ export class DevServerController {
     this.write("system", "Starting Riebeckite development server.");
     this.startTimeout = window.setTimeout(() => {
       if (this.state.kind !== "starting") return;
-      this.fail(
-        "Riebeckite did not complete its managed development handshake.",
-      );
+      this.fail("Riebeckite did not finish starting within 3 minutes.");
       void this.stop();
-    }, 30_000);
+    }, 180_000);
     const child = spawn("node", [command, "dev"], {
       cwd: projectDirectory,
       env: {
@@ -123,12 +121,20 @@ export class DevServerController {
     child.once("exit", (code, signal) => {
       this.clearStartTimeout();
       const stopping = this.state.kind === "stopping";
+      const failed = this.state.kind === "failed";
       this.process = undefined;
       this.token = undefined;
       this.sessionId = undefined;
       this.resolveStop?.(true);
       this.resolveStop = undefined;
       this.stopCompletion = undefined;
+      if (failed) {
+        this.write(
+          "system",
+          `Development server exited (${signal ?? code ?? "unknown"}).`,
+        );
+        return;
+      }
       this.write(
         "system",
         stopping
@@ -151,7 +157,7 @@ export class DevServerController {
     const child = this.process;
     if (!child?.pid) return true;
     if (this.stopCompletion) return this.stopCompletion;
-    this.setState({ kind: "stopping" });
+    if (this.state.kind !== "failed") this.setState({ kind: "stopping" });
     this.stopCompletion = new Promise<boolean>((resolve) => {
       this.resolveStop = resolve;
     });
@@ -221,6 +227,7 @@ export class DevServerController {
 
   private fail(message: string): void {
     this.clearStartTimeout();
+    this.write("system", message);
     this.setState({ kind: "failed", message });
   }
 

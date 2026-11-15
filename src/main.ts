@@ -253,6 +253,7 @@ export default class RiebeckitePlugin extends Plugin {
       }
       this.polling.start();
       await this.refreshViews();
+      void this.warmContentBuild(state.serverUrl);
     }
     if (!silent && connection.kind !== "connected")
       new Notice(
@@ -265,6 +266,15 @@ export default class RiebeckitePlugin extends Plugin {
     this.polling.stop();
     this.bridge.disconnect();
     void this.refreshViews();
+  }
+
+  private async warmContentBuild(serverUrl: string): Promise<void> {
+    try {
+      await requestUrl({ url: `${serverUrl}/`, method: "GET", throw: false });
+    } catch {
+      return;
+    }
+    await this.refreshViews();
   }
 
   bridgeSource(path: string): string | undefined {
@@ -375,16 +385,26 @@ export default class RiebeckitePlugin extends Plugin {
   private async refreshBridgeStatus(): Promise<BridgeConnectionState> {
     const token = this.devServer.getToken();
     if (!token) return { kind: "disconnected" };
-    const previousRevision = this.bridge.getRevision();
+    const previousState = this.bridge.getState();
+    const previousRevision =
+      previousState.kind === "connected"
+        ? previousState.status.development.revision
+        : undefined;
+    const wasInspectable =
+      previousState.kind === "connected" &&
+      previousState.status.inspection.available;
     const state =
-      this.bridge.getState().kind === "connected"
+      previousState.kind === "connected"
         ? await this.bridge.refreshStatus(token)
         : await this.connectBridge(true);
-    if (
-      state.kind === "connected" &&
-      state.status.development.revision !== previousRevision
-    )
-      await this.refreshViews();
+    if (state.kind === "connected") {
+      const inspectable = state.status.inspection.available;
+      if (
+        state.status.development.revision !== previousRevision ||
+        (!wasInspectable && inspectable)
+      )
+        await this.refreshViews();
+    }
     return state;
   }
 
