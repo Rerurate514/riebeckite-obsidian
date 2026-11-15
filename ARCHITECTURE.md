@@ -57,12 +57,13 @@ all-vault Bridge endpoint and no polling. Views discard superseded active-file
 requests and refresh with the existing workspace and vault lifecycle events.
 
 Diagnostics navigation resolves a path through Obsidian's vault before opening
-it. Bridge v1 currently does not document line/column indexing or source-range
-revision semantics, so this plugin intentionally does not set a cursor or add
-CodeMirror decorations. That preserves the no-wrong-location invariant for
-Unicode text and stale diagnostics. Mutation, quick-fix, SSE subscription, and
-editor decoration adapters remain separate future work; no Vault API mutation
-is used as a substitute.
+it. Valid 1-based Bridge positions set the cursor and create CodeMirror markers;
+grapheme-aware columns are clamped to the source line, and stale responses never
+replace the active diagnostic set. The workspace and legacy diagnostics views
+share that set. Mutation uses Bridge's separate mutation token and server-side
+approval only when the user provides the token in Obsidian's startup
+environment. The plugin never creates credentials, approves plans, or uses the
+Vault API as a mutation substitute.
 
 The managed local development server uses Node's process APIs, so
 `isDesktopOnly` is `true`. It runs only the configured project's local

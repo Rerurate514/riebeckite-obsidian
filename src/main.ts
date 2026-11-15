@@ -6,6 +6,7 @@ import {
   Platform,
   Plugin,
   requestUrl,
+  TFile,
   type WorkspaceLeaf,
 } from "obsidian";
 import type {
@@ -55,9 +56,9 @@ export default class RiebeckitePlugin extends Plugin {
   readonly editor = new EditorApi(
     this.bridge,
     () => this.bridgeToken(),
-    () => undefined,
+    () => this.devServer.getMutationToken(),
     (path) => this.bridgeSource(path),
-    () => false,
+    () => this.devServer.getMutationToken() !== undefined,
   );
   private readonly polling = new BridgePolling(
     async () => (await this.refreshBridgeStatus()).kind,
@@ -145,6 +146,11 @@ export default class RiebeckitePlugin extends Plugin {
         callback: () => void this.openWorkspace("preview"),
       });
       this.addCommand({
+        id: "open-publish-review",
+        name: "Open Publish Review",
+        callback: () => void this.openWorkspace("review"),
+      });
+      this.addCommand({
         id: "refresh-live-preview",
         name: "Refresh Live Preview",
         callback: () => void this.refreshPreviews(),
@@ -153,6 +159,11 @@ export default class RiebeckitePlugin extends Plugin {
         id: "open-current-preview-in-browser",
         name: "Open Current Preview in Browser",
         callback: () => void this.openCurrentPreviewInBrowser(),
+      });
+      this.addCommand({
+        id: "copy-current-preview-url",
+        name: "Copy Current Preview URL",
+        callback: () => void this.copyCurrentPreviewUrl(),
       });
     } catch (error) {
       console.error("Unable to load Riebeckite", error);
@@ -299,6 +310,24 @@ export default class RiebeckitePlugin extends Plugin {
     refreshDiagnosticDecorations();
   }
 
+  async openDiagnostic(diagnostic: BridgeDiagnostic): Promise<void> {
+    const source = diagnostic.source?.path;
+    if (!source) return;
+    const file = this.app.vault.getAbstractFileByPath(
+      this.vaultPath(source) ?? source,
+    );
+    if (!(file instanceof TFile)) return;
+    await this.app.workspace.getLeaf(false).openFile(file, {
+      eState:
+        diagnostic.source?.line === undefined
+          ? undefined
+          : {
+              line: Math.max(0, diagnostic.source.line - 1),
+              column: Math.max(0, (diagnostic.source.column ?? 1) - 1),
+            },
+    });
+  }
+
   openSettings(): void {
     const app = this.app as App & {
       setting: { open(): void; openTabById(id: string): void };
@@ -315,7 +344,7 @@ export default class RiebeckitePlugin extends Plugin {
   }
 
   async openWorkspace(
-    tab?: "publication" | "diagnostics" | "preview",
+    tab?: "publication" | "diagnostics" | "preview" | "review",
   ): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(workspaceViewType)[0];
     const leaf = existing ?? this.app.workspace.getRightLeaf(false);
@@ -445,6 +474,19 @@ export default class RiebeckitePlugin extends Plugin {
     );
     if (result.kind === "resolved" && result.page.routable)
       window.open(result.previewUrl, "_blank", "noopener");
+  }
+
+  private async copyCurrentPreviewUrl(): Promise<void> {
+    const file = this.activeMarkdownFile();
+    const source = file ? this.bridgeSource(file.path) : undefined;
+    if (!source || this.bridge.getState().kind !== "connected") return;
+    const result = await this.bridge.resolvePage(
+      this.serverUrl(),
+      this.bridgeToken(),
+      source,
+    );
+    if (result.kind === "resolved" && result.page.routable)
+      await navigator.clipboard.writeText(result.previewUrl);
   }
 }
 

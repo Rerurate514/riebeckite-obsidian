@@ -6,6 +6,7 @@ import type {
 } from "../bridge/bridge-client";
 import { RequestGate } from "../lifecycle/request-gate";
 import type RiebeckitePlugin from "../main";
+import type { SavedPublicationFilter } from "../settings/settings";
 import {
   filterPublications,
   impactReasonLabel,
@@ -30,6 +31,7 @@ export class RiebeckitePublicationView extends ItemView {
   private visibleRows = 100;
   private mutationPlan: { path: string; plan: BridgeMutationPlan } | undefined;
   private mutationMessage: string | undefined;
+  private savedFilterName: string | undefined;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -108,6 +110,41 @@ export class RiebeckitePublicationView extends ItemView {
     if (this.requests.isCurrent(request)) this.render();
   }
 
+  private async saveFilter(): Promise<void> {
+    const name = window.prompt(
+      "Name this publication filter.",
+      this.savedFilterName,
+    );
+    if (!name?.trim()) return;
+    const savedFilter: SavedPublicationFilter = {
+      name: name.trim(),
+      filter: this.filter,
+      query: this.query,
+    };
+    await this.plugin.updateSettings({
+      savedPublicationFilters: [
+        ...this.plugin.settings.savedPublicationFilters.filter(
+          (candidate) => candidate.name !== savedFilter.name,
+        ),
+        savedFilter,
+      ],
+    });
+    this.savedFilterName = savedFilter.name;
+    this.render();
+  }
+
+  private async removeSavedFilter(): Promise<void> {
+    if (!this.savedFilterName) return;
+    await this.plugin.updateSettings({
+      savedPublicationFilters:
+        this.plugin.settings.savedPublicationFilters.filter(
+          (candidate) => candidate.name !== this.savedFilterName,
+        ),
+    });
+    this.savedFilterName = undefined;
+    this.render();
+  }
+
   private render(message?: string): void {
     if (this.closed) return;
     const container = this.contentEl;
@@ -138,6 +175,7 @@ export class RiebeckitePublicationView extends ItemView {
     }
     select.onchange = () => {
       this.filter = select.value as PublicationFilter;
+      this.savedFilterName = undefined;
       this.render();
     };
     const search = controls.createEl("input", {
@@ -148,10 +186,37 @@ export class RiebeckitePublicationView extends ItemView {
     search.value = this.query;
     search.oninput = () => {
       this.query = search.value;
+      this.savedFilterName = undefined;
       this.render();
     };
     controls.createEl("button", { text: "Refresh vault" }).onclick = () =>
       void this.refreshVault();
+    const saved = controls.createEl("select", {
+      attr: { "aria-label": "Saved publication filters" },
+    });
+    saved.createEl("option", { text: "Saved filters", value: "" });
+    for (const savedFilter of this.plugin.settings.savedPublicationFilters) {
+      const option = saved.createEl("option", {
+        text: savedFilter.name,
+        value: savedFilter.name,
+      });
+      option.selected = savedFilter.name === this.savedFilterName;
+    }
+    saved.onchange = () => {
+      const savedFilter = this.plugin.settings.savedPublicationFilters.find(
+        (candidate) => candidate.name === saved.value,
+      );
+      if (!savedFilter) return;
+      this.savedFilterName = savedFilter.name;
+      this.filter = savedFilter.filter;
+      this.query = savedFilter.query;
+      this.render();
+    };
+    controls.createEl("button", { text: "Save filter" }).onclick = () =>
+      void this.saveFilter();
+    if (this.savedFilterName)
+      controls.createEl("button", { text: "Remove saved filter" }).onclick =
+        () => void this.removeSavedFilter();
     if (message) container.createEl("p", { text: message });
     const rows = filterPublications(
       [...this.rows.values()],

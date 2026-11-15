@@ -1,7 +1,16 @@
 import { ItemView, type WorkspaceLeaf } from "obsidian";
-import type { BridgeConnectionState } from "../bridge/bridge-client";
+import type {
+  BridgeConnectionState,
+  BridgeImpact,
+  BridgeImpactOutput,
+  BridgePublication,
+} from "../bridge/bridge-client";
 import type { DevServerState } from "../dev/dev-server-controller";
 import type RiebeckitePlugin from "../main";
+import {
+  impactReasonLabel,
+  seoIssueLabel,
+} from "../publication/publication-model";
 import { activeSite } from "../settings/settings";
 
 export const workspaceViewType = "riebeckite-workspace";
@@ -11,6 +20,7 @@ type Tab =
   | "preview"
   | "publication"
   | "diagnostics"
+  | "review"
   | "impact"
   | "seo"
   | "logs";
@@ -178,7 +188,8 @@ export class RiebeckiteWorkspaceView extends ItemView {
       });
       return;
     }
-    container.createEl("button", { text: "Reload" }).onclick = () =>
+    const actions = container.createDiv({ cls: "riebeckite-dev-actions" });
+    actions.createEl("button", { text: "Reload" }).onclick = () =>
       void this.plugin.refreshWorkspace();
     void this.renderResolvedPreview(container, source);
   }
@@ -206,8 +217,11 @@ export class RiebeckiteWorkspaceView extends ItemView {
       text: `${result.page.visibility} · ${result.page.routable ? "routable" : "not routable"}`,
     });
     if (!result.page.routable) return;
-    container.createEl("button", { text: "Open in browser" }).onclick = () =>
+    const actions = container.createDiv({ cls: "riebeckite-dev-actions" });
+    actions.createEl("button", { text: "Open in browser" }).onclick = () =>
       window.open(result.previewUrl, "_blank", "noopener");
+    actions.createEl("button", { text: "Copy preview URL" }).onclick = () =>
+      void navigator.clipboard.writeText(result.previewUrl);
     const frame = container.createEl("iframe", {
       cls: "riebeckite-preview-frame",
     });
@@ -242,6 +256,7 @@ export class RiebeckiteWorkspaceView extends ItemView {
         });
         return;
       }
+      this.plugin.setDiagnostics(file.path, result.value);
       const diagnostics = container.createDiv({
         cls: "riebeckite-diagnostics",
       });
@@ -314,6 +329,10 @@ export class RiebeckiteWorkspaceView extends ItemView {
           item.createEl("small", {
             text: `Suggested fix: ${diagnostic.fix.description}`,
           });
+        if (diagnostic.source) {
+          const open = item.createEl("button", { text: "Open diagnostic" });
+          open.onclick = () => void this.plugin.openDiagnostic(diagnostic);
+        }
       }
       return;
     }
@@ -322,20 +341,16 @@ export class RiebeckiteWorkspaceView extends ItemView {
       if (!this.isCurrentFeatureRequest(request, container)) return;
       container.empty();
       if (impact.kind !== "resolved") {
-        container.createEl("p", { text: "Build impact is unavailable." });
+        const notice = container.createDiv({
+          cls: "riebeckite-workspace-notice",
+        });
+        notice.createEl("strong", { text: "Build impact unavailable" });
+        notice.createEl("span", {
+          text: "The connected site could not inspect this document's build impact.",
+        });
         return;
       }
-      for (const [label, outputs] of [
-        ["Changed", impact.value.affectedOutputs],
-        ["Unchanged", impact.value.unchangedOutputs],
-        ["Removed", impact.value.removedOutputs],
-      ] as const) {
-        container.createEl("p", { text: `${label}: ${outputs.length}` });
-        for (const output of outputs)
-          container.createEl("p", {
-            text: `${output.path} · ${output.producer}`,
-          });
-      }
+      this.renderImpact(container, impact.value);
       return;
     }
     const result = await this.plugin.editor.publication(file.path);
@@ -346,6 +361,15 @@ export class RiebeckiteWorkspaceView extends ItemView {
       return;
     }
     const publication = result.value;
+    if (this.tab === "review") {
+      const [diagnostics, impact] = await Promise.all([
+        this.plugin.editor.diagnostics(file.path),
+        this.plugin.editor.impact(file.path),
+      ]);
+      if (!this.isCurrentFeatureRequest(request, container)) return;
+      this.renderReview(container, publication, diagnostics, impact);
+      return;
+    }
     if (this.tab === "publication") {
       const details = container.createDiv({
         cls: "riebeckite-publication",
@@ -382,19 +406,7 @@ export class RiebeckiteWorkspaceView extends ItemView {
       return;
     }
     if (this.tab === "seo") {
-      const seo = publication.seo;
-      if (!seo) {
-        container.createEl("p", { text: "SEO information is unavailable." });
-        return;
-      }
-      for (const [label, value] of [
-        ["Title", seo.title],
-        ["Description", seo.description ?? "not supplied"],
-        ["Canonical URL", seo.canonicalUrl ?? "not supplied"],
-        ["Indexable", seo.indexable ? "yes" : "no"],
-        ["Issues", seo.issues.length ? seo.issues.join("; ") : "no issues"],
-      ])
-        container.createEl("p", { text: `${label}: ${value}` });
+      this.renderSeo(container, publication, file.path);
       return;
     }
   }
@@ -408,10 +420,237 @@ export class RiebeckiteWorkspaceView extends ItemView {
 
   private renderLogs(container: HTMLElement): void {
     const logs = this.plugin.devServer.logs();
-    if (!logs.length)
-      container.createEl("p", { text: "No managed development server logs." });
-    for (const entry of logs)
-      container.createEl("pre", { text: `[${entry.stream}] ${entry.text}` });
+    const section = container.createDiv({ cls: "riebeckite-logs" });
+    const header = section.createDiv({ cls: "riebeckite-feature-header" });
+    const summary = header.createDiv();
+    summary.createEl("span", {
+      cls: "riebeckite-workspace-section-label",
+      text: "Managed development server",
+    });
+    summary.createEl("strong", {
+      text: logs.length
+        ? `${logs.length} log entr${logs.length === 1 ? "y" : "ies"}`
+        : "No log entries",
+    });
+    summary.createEl("small", {
+      text: logs.length
+        ? "Latest output from the server started by Riebeckite."
+        : "Start Dev to capture server output here.",
+    });
+    header.createEl("button", { text: "Refresh" }).onclick = () =>
+      this.render();
+    if (!logs.length) return;
+    const list = section.createDiv({
+      cls: "riebeckite-log-list",
+      attr: { role: "log", "aria-live": "polite" },
+    });
+    for (const entry of logs) {
+      const item = list.createDiv({
+        cls: `riebeckite-log-item is-${entry.stream}`,
+      });
+      item.createEl("span", {
+        cls: "riebeckite-log-stream",
+        text: entry.stream,
+      });
+      item.createEl("code", { text: entry.text });
+    }
+  }
+
+  private renderReview(
+    container: HTMLElement,
+    publication: BridgePublication,
+    diagnostics: Awaited<ReturnType<RiebeckitePlugin["editor"]["diagnostics"]>>,
+    impact: Awaited<ReturnType<RiebeckitePlugin["editor"]["impact"]>>,
+  ): void {
+    const section = container.createDiv({ cls: "riebeckite-review" });
+    section.createEl("h5", { text: "Publish review" });
+    renderStatusRow(section, publicationStatus(publication.visibility));
+    renderStatusRow(section, {
+      label: "SEO",
+      tone: publication.seo?.issues.length ? "busy" : "ok",
+      text: publication.seo?.issues.length
+        ? `${publication.seo.issues.length} issue${publication.seo.issues.length === 1 ? "" : "s"}`
+        : "No SEO issues",
+      detail: publication.seo?.indexable
+        ? "This page is indexable."
+        : "Search indexing is unavailable or disabled.",
+    });
+    renderStatusRow(section, {
+      label: "Diagnostics",
+      tone:
+        diagnostics.kind === "resolved" && diagnostics.value.length === 0
+          ? "ok"
+          : diagnostics.kind === "resolved"
+            ? "busy"
+            : "idle",
+      text:
+        diagnostics.kind === "resolved"
+          ? diagnostics.value.length
+            ? `${diagnostics.value.length} issue${diagnostics.value.length === 1 ? "" : "s"}`
+            : "No issues"
+          : "Unavailable",
+    });
+    renderStatusRow(section, {
+      label: "Build impact",
+      tone:
+        impact.kind === "resolved" && !impact.value.fullRegenerationRequired
+          ? "ok"
+          : impact.kind === "resolved"
+            ? "busy"
+            : "idle",
+      text:
+        impact.kind === "resolved"
+          ? impact.value.fullRegenerationRequired
+            ? "Full regeneration required"
+            : `${impact.value.affectedOutputs.length} changed outputs`
+          : "Unavailable",
+    });
+    const actions = section.createDiv({ cls: "riebeckite-dev-actions" });
+    for (const [tab, label] of [
+      ["publication", "Publication"],
+      ["seo", "SEO"],
+      ["diagnostics", "Diagnostics"],
+      ["impact", "Impact"],
+    ] as const)
+      actions.createEl("button", { text: label }).onclick = () =>
+        this.selectTab(tab);
+  }
+
+  private renderImpact(container: HTMLElement, impact: BridgeImpact): void {
+    const section = container.createDiv({ cls: "riebeckite-impact" });
+    const header = section.createDiv({ cls: "riebeckite-feature-header" });
+    const summary = header.createDiv();
+    summary.createEl("span", {
+      cls: "riebeckite-workspace-section-label",
+      text: "Build impact",
+    });
+    const total =
+      impact.affectedOutputs.length +
+      impact.unchangedOutputs.length +
+      impact.removedOutputs.length;
+    summary.createEl("strong", {
+      text: total
+        ? `${total} output${total === 1 ? "" : "s"} inspected`
+        : "No outputs affected",
+    });
+    summary.createEl("small", {
+      text:
+        impact.completeness === "complete"
+          ? "The connected site returned a complete impact analysis."
+          : "The connected site could not determine the complete impact.",
+    });
+    header.createEl("button", { text: "Refresh" }).onclick = () =>
+      this.render();
+    const overview = section.createDiv({ cls: "riebeckite-impact-overview" });
+    renderImpactMetric(
+      overview,
+      "Changed",
+      impact.affectedOutputs.length,
+      "changed",
+    );
+    renderImpactMetric(
+      overview,
+      "Unchanged",
+      impact.unchangedOutputs.length,
+      "unchanged",
+    );
+    renderImpactMetric(
+      overview,
+      "Removed",
+      impact.removedOutputs.length,
+      "removed",
+    );
+    if (impact.fullRegenerationRequired) {
+      const notice = section.createDiv({ cls: "riebeckite-workspace-notice" });
+      notice.createEl("strong", { text: "Full regeneration required" });
+      notice.createEl("span", {
+        text: "This change requires the entire site to be regenerated.",
+      });
+    }
+    for (const [label, outputs, tone] of [
+      ["Changed", impact.affectedOutputs, "changed"],
+      ["Unchanged", impact.unchangedOutputs, "unchanged"],
+      ["Removed", impact.removedOutputs, "removed"],
+    ] as const) {
+      if (!outputs.length) continue;
+      const group = section.createDiv({ cls: "riebeckite-impact-group" });
+      group.createEl("h5", { text: `${label} · ${outputs.length}` });
+      const list = group.createDiv({
+        cls: "riebeckite-impact-list",
+        attr: { role: "list" },
+      });
+      for (const output of outputs) renderImpactOutput(list, output, tone);
+    }
+  }
+
+  private renderSeo(
+    container: HTMLElement,
+    publication: BridgePublication,
+    path: string,
+  ): void {
+    const section = container.createDiv({ cls: "riebeckite-seo" });
+    const header = section.createDiv({ cls: "riebeckite-feature-header" });
+    const summary = header.createDiv();
+    summary.createEl("span", {
+      cls: "riebeckite-workspace-section-label",
+      text: "Search visibility",
+    });
+    const seo = publication.seo;
+    summary.createEl("strong", {
+      text: !seo
+        ? "SEO information unavailable"
+        : seo.issues.length
+          ? `${seo.issues.length} issue${seo.issues.length === 1 ? "" : "s"} found`
+          : "No SEO issues found",
+    });
+    summary.createEl("small", { text: path });
+    header.createEl("button", { text: "Refresh" }).onclick = () =>
+      this.render();
+    if (!seo) {
+      const notice = section.createDiv({ cls: "riebeckite-workspace-notice" });
+      notice.createEl("strong", { text: "No SEO data" });
+      notice.createEl("span", {
+        text: "The connected site did not return SEO information for this document.",
+      });
+      return;
+    }
+    renderStatusRow(section, {
+      label: "Indexing",
+      tone: seo.indexable ? "ok" : "idle",
+      text: seo.indexable ? "Indexable" : "Not indexable",
+      detail: seo.indexable
+        ? "Search engines can include this page in their results."
+        : "Search engines should not include this page in their results.",
+    });
+    const details = section.createEl("dl", {
+      cls: "riebeckite-publication-list",
+    });
+    renderPublicationDetail(details, "Title", seo.title);
+    renderPublicationDetail(
+      details,
+      "Description",
+      seo.description ?? "Not supplied",
+    );
+    renderPublicationDetail(
+      details,
+      "Canonical URL",
+      seo.canonicalUrl ?? "Not supplied",
+    );
+    if (!seo.issues.length) return;
+    const issues = section.createDiv({ cls: "riebeckite-seo-issues" });
+    issues.createEl("h5", { text: "Issues" });
+    const list = issues.createDiv({
+      cls: "riebeckite-diagnostic-list",
+      attr: { role: "list" },
+    });
+    for (const issue of seo.issues) {
+      const item = list.createDiv({
+        cls: "riebeckite-diagnostic-item is-warning",
+        attr: { role: "listitem" },
+      });
+      item.createEl("strong", { text: seoIssueLabel(issue) });
+      item.createEl("small", { text: issue });
+    }
   }
 }
 
@@ -419,6 +658,7 @@ const tabs: readonly { id: Tab; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "preview", label: "Preview" },
   { id: "publication", label: "Publication" },
+  { id: "review", label: "Review" },
   { id: "diagnostics", label: "Diagnostics" },
   { id: "impact", label: "Impact" },
   { id: "seo", label: "SEO" },
@@ -481,6 +721,42 @@ function renderPublicationDetail(
   const row = list.createDiv({ cls: "riebeckite-publication-detail" });
   row.createEl("dt", { text: label });
   row.createEl("dd", { text: value });
+}
+
+function renderImpactMetric(
+  container: HTMLElement,
+  label: string,
+  value: number,
+  tone: "changed" | "unchanged" | "removed",
+): void {
+  const card = container.createDiv({
+    cls: `riebeckite-impact-metric is-${tone}`,
+  });
+  card.createEl("span", { text: label });
+  card.createEl("strong", { text: String(value) });
+}
+
+function renderImpactOutput(
+  container: HTMLElement,
+  output: BridgeImpactOutput,
+  tone: "changed" | "unchanged" | "removed",
+): void {
+  const item = container.createDiv({
+    cls: `riebeckite-impact-item is-${tone}`,
+    attr: { role: "listitem" },
+  });
+  item.createEl("code", { text: output.path });
+  const detail = item.createDiv({ cls: "riebeckite-impact-detail" });
+  detail.createEl("span", { text: output.producer });
+  const reason = `${impactReasonLabel(output.reason.type)}${output.reason.slug ? `: ${output.reason.slug}` : ""}`;
+  detail.createEl("span", { text: reason });
+  const dependencies = output.dependencies
+    .map((dependency) => dependency.slug ?? dependency.type)
+    .filter(Boolean);
+  if (dependencies.length)
+    item.createEl("small", {
+      text: `Dependencies: ${dependencies.join(", ")}`,
+    });
 }
 
 function serverStatus(

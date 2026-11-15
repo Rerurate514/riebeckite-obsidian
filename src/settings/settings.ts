@@ -11,11 +11,26 @@ export type SiteProject = {
 export interface RiebeckiteSettings {
   readonly sites: readonly SiteProject[];
   readonly activeSiteId: string;
+  readonly savedPublicationFilters: readonly SavedPublicationFilter[];
 }
+
+export type SavedPublicationFilter = {
+  readonly name: string;
+  readonly filter:
+    | "all"
+    | "public"
+    | "draft"
+    | "scheduled"
+    | "unlisted"
+    | "not-routable"
+    | "issues";
+  readonly query: string;
+};
 
 export const defaultSettings: RiebeckiteSettings = {
   sites: [],
   activeSiteId: "",
+  savedPublicationFilters: [],
 };
 
 export function parseSettings(value: unknown): RiebeckiteSettings {
@@ -34,7 +49,13 @@ export function parseSettings(value: unknown): RiebeckiteSettings {
           sites.some((site) => site.id === record.activeProfileId)
         ? record.activeProfileId
         : (sites[0]?.id ?? "");
-  return { sites, activeSiteId };
+  return {
+    sites,
+    activeSiteId,
+    savedPublicationFilters: Array.isArray(record.savedPublicationFilters)
+      ? record.savedPublicationFilters.flatMap(parseSavedPublicationFilter)
+      : [],
+  };
 }
 
 export function activeSite(
@@ -97,6 +118,27 @@ function parseLegacyProfile(value: unknown): SiteProject[] {
     contentRootId: record.contentRootId,
     managedDevTrusted: record.managedDevTrusted,
   });
+}
+
+function parseSavedPublicationFilter(value: unknown): SavedPublicationFilter[] {
+  if (!value || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const name = optionalString(record.name);
+  const query = typeof record.query === "string" ? record.query : undefined;
+  const filter = record.filter;
+  return name &&
+    query !== undefined &&
+    [
+      "all",
+      "public",
+      "draft",
+      "scheduled",
+      "unlisted",
+      "not-routable",
+      "issues",
+    ].includes(String(filter))
+    ? [{ name, filter: filter as SavedPublicationFilter["filter"], query }]
+    : [];
 }
 
 function optionalString(value: unknown): string | undefined {

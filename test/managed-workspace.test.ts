@@ -16,6 +16,7 @@ const [controller, workspace, main] = await Promise.all(
 
 test("managed development uses a runtime environment token without CLI exposure", () => {
   assert.match(controller, /RIEBECKITE_BRIDGE_TOKEN: this\.token/);
+  assert.match(controller, /RIEBECKITE_BRIDGE_MUTATION_TOKEN/);
   assert.match(controller, /RIEBECKITE_MANAGED_DEV_CONTROL_FD: "3"/);
   assert.match(controller, /spawn\("node", \[command, "dev"\]/);
   assert.match(controller, /stdio: \["ignore", "pipe", "pipe", "pipe"\]/);
@@ -33,6 +34,7 @@ test("managed development stops only the owned Windows process tree", () => {
 test("workspace owns the managed development and active-note tabs", () => {
   assert.match(workspace, /workspaceViewType = "riebeckite-workspace"/);
   assert.match(workspace, /\{ id: "logs", label: "Logs" \}/);
+  assert.match(workspace, /\{ id: "review", label: "Review" \}/);
   assert.match(workspace, /this\.plugin\.editor\.publication\(file\.path\)/);
   assert.match(workspace, /this\.plugin\.editor\.diagnostics\(file\.path\)/);
   assert.match(workspace, /this\.plugin\.editor\.impact\(file\.path\)/);

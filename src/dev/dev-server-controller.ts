@@ -38,6 +38,7 @@ export class DevServerController {
   private state: DevServerState = { kind: "stopped" };
   private readonly entries: DevServerLog[] = [];
   private token: string | undefined;
+  private mutationToken: string | undefined;
   private sessionId: string | undefined;
   private startTimeout: number | undefined;
   private stopCompletion: Promise<boolean> | undefined;
@@ -50,6 +51,10 @@ export class DevServerController {
 
   getToken(): string | undefined {
     return this.token;
+  }
+
+  getMutationToken(): string | undefined {
+    return this.mutationToken;
   }
 
   logs(): readonly DevServerLog[] {
@@ -82,6 +87,7 @@ export class DevServerController {
       return false;
     }
     this.token = crypto.randomUUID();
+    this.mutationToken = process.env.RIEBECKITE_BRIDGE_MUTATION_TOKEN;
     this.sessionId = crypto.randomUUID();
     this.setState({ kind: "starting" });
     this.write("system", "Starting Riebeckite development server.");
@@ -124,6 +130,7 @@ export class DevServerController {
       const failed = this.state.kind === "failed";
       this.process = undefined;
       this.token = undefined;
+      this.mutationToken = undefined;
       this.sessionId = undefined;
       this.resolveStop?.(true);
       this.resolveStop = undefined;
@@ -211,7 +218,9 @@ export class DevServerController {
   }
 
   private write(stream: DevServerLog["stream"], text: string): void {
-    const safe = this.token ? text.split(this.token).join("[redacted]") : text;
+    const safe = [this.token, this.mutationToken]
+      .filter((token): token is string => token !== undefined)
+      .reduce((value, token) => value.split(token).join("[redacted]"), text);
     for (const line of safe.replace(ansiEscapePattern, "").split(/\r?\n/)) {
       if (line) this.entries.push({ stream, text: line });
     }

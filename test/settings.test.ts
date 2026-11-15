@@ -35,6 +35,7 @@ test("discards legacy credentials while retaining safe site selection data", () 
       },
     ],
     activeSiteId: "site",
+    savedPublicationFilters: [],
   });
   assert.doesNotMatch(JSON.stringify(settings), /secret/);
 });
@@ -42,6 +43,18 @@ test("discards legacy credentials while retaining safe site selection data", () 
 test("rejects malformed site settings", () => {
   assert.deepEqual(parseSettings(null), defaultSettings);
   assert.deepEqual(parseSettings({ sites: [{ id: "site" }] }), defaultSettings);
+});
+
+test("retains only valid saved publication filters", () => {
+  const settings = parseSettings({
+    savedPublicationFilters: [
+      { name: "Ready to publish", filter: "issues", query: "guide" },
+      { name: "Bad", filter: "unknown", query: "" },
+    ],
+  });
+  assert.deepEqual(settings.savedPublicationFilters, [
+    { name: "Ready to publish", filter: "issues", query: "guide" },
+  ]);
 });
 
 test("maps the whole vault by default and a configured folder when present", () => {

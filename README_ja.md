@@ -9,10 +9,11 @@ English: [README.md](./README.md)
 ## 開発状況
 
 Bridge Protocol v1による状態取得、解決済みページ状態、Live Previewサイドペイン、Publication
-Manager、Document Diagnosticsを提供します。Previewは実際のローカルHonoX開発ページを表示し、
-Obsidian側でMarkdownを変換しません。設定ではサイトを一度選択し、標準ではVault全体を対応付けます。
-必要に応じてVaultフォルダに限定でき、管理開発への接続時にidentityを照合します。revision更新では
-プラグインのViewだけを更新し、編集中のエディタ本文・カーソル・選択・ファイルは変更しません。
+Manager、Document Diagnostics、Build Impact、SEO、ノート単位のPublish Reviewを提供します。Previewは
+実際のローカルHonoX開発ページを表示し、Obsidian側でMarkdownを変換しません。設定ではサイトを一度選択し、
+標準ではVault全体を対応付けます。必要に応じてVaultフォルダに限定でき、管理開発への接続時にidentityを
+照合します。revision更新ではプラグインのViewだけを更新し、編集中のエディタ本文・カーソル・選択・ファイルは
+変更しません。
 
 ## 管理された開発（Desktop）
 
@@ -29,9 +30,15 @@ CLIはloopbackのBridge bootstrap endpointを確認できてからだけ `ready`
 なる場合はローカル開発用の専用アカウントを使ってください。Start DevでMutation権限は付与されません。
 
 StopとRestartは、このプラグインが起動したプロセスだけ（WindowsではそのPIDツリー）を対象にします。
-タブではアクティブノートのPreview、Publication、Diagnostics、Build Impact、SEOを確認できます。
-Safe Mutationはサーバー側で保護されたままですが、この管理連携はMutation用の認証情報を渡さず、
-ファイルも書き換えません。
+タブではアクティブノートのPreview、Publication、Diagnostics、Build Impact、SEO、Publish Reviewを確認できます。
+Publication Managerでは、Vault全体の取得結果に対するフィルタを保存できます。Previewでは再読み込み、
+ブラウザで開く、URLコピーの操作とコマンドを使えます。
+
+安全なfrontmatter編集は、Obsidian自体を `RIEBECKITE_BRIDGE_MUTATION_TOKEN` を設定して起動した場合だけ
+利用できます。管理プロセスはこのトークンを継承しますが、プラグインは保存も表示もしません。Planの適用前に、
+別途 `RIEBECKITE_BRIDGE_MUTATION_APPROVAL_TOKEN` を設定したターミナルで
+`riebeckite bridge approve <plan-id>` を実行してください。プラグインはPlanの承認、コンテンツの復旧、
+ロールバックを行いません。Mutation Tokenがなければ編集操作は利用できません。
 
 ## 手動インストール
 
@@ -114,8 +121,9 @@ Publication Managerには任意capabilityの`publication`、Diagnostics Viewに�
 非常に大きな結果セットでは診断ごとに1つの操作要素を描画します。Bridge状態の確認は管理開発へ接続してから
 開始し、revisionが変わるとViewを更新します。これらの更新はエディタの入力・カーソル・選択・ファイルを
 変更しません。Vault全体の取得は4 workerで行い、最初の100ノートずつを表示します。Safe Mutationは
-Bridge認証情報と短時間だけ有効な独立したサーバー側承認により保護されたままですが、この連携では利用できません。
-リリース前には実際のObsidianでE2E検証が必要です。
+Bridge認証情報と短時間だけ有効な独立したサーバー側承認により保護されたままです。この連携は
+Obsidian起動時の環境変数からだけMutation Tokenを読み取り、両方の秘密情報を保存・表示・生成しません。
+承認、復旧、ロールバックはCLI専用です。リリース前には実際のObsidianでE2E検証が必要です。
 
 ## リリース
 

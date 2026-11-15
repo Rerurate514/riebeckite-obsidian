@@ -79,6 +79,8 @@ export class RiebeckitePreviewView extends ItemView {
     if (result.page.routable) {
       actions.createEl("button", { text: "Open in browser" }).onclick = () =>
         window.open(result.previewUrl, "_blank", "noopener");
+      actions.createEl("button", { text: "Copy preview URL" }).onclick = () =>
+        void navigator.clipboard.writeText(result.previewUrl);
     }
     if (result.page.productionUrl) {
       actions.createEl("button", { text: "Copy public URL" }).onclick = () =>

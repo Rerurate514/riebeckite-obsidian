@@ -9,12 +9,13 @@ managed process; it does not connect to arbitrary servers.
 ## Status
 
 Bridge Protocol v1 provides connection status, resolved page status, a Live
-Preview side pane, Publication Manager, and Document Diagnostics. The preview
-pane displays the actual local HonoX development page; Obsidian does not render
-Markdown itself. A site is selected once in settings, maps the whole vault by
-default, and is identity-checked when managed development connects. An optional
-vault folder narrows that mapping. Revision updates refresh plugin views only;
-they never change editor text, cursor, selection, or files.
+Preview side pane, Publication Manager, Document Diagnostics, Build Impact,
+SEO, and a per-note Publish Review. The preview pane displays the actual local
+HonoX development page; Obsidian does not render Markdown itself. A site is
+selected once in settings, maps the whole vault by default, and is
+identity-checked when managed development connects. An optional vault folder
+narrows that mapping. Revision updates refresh plugin views only; they never
+change editor text, cursor, selection, or files.
 
 ## Managed development (Desktop)
 
@@ -35,8 +36,17 @@ access.
 
 Stop and Restart affect only the process started by this plugin (and its Windows
 PID tree). The tabs show the active note's preview, publication, diagnostics,
-build impact, and SEO data. Safe Mutation remains server-side protected, but
-this managed integration does not supply mutation credentials or write files.
+build impact, SEO, and publish review. Publication Manager can save local
+filters for a vault-wide scan. Preview actions include reload, open in browser,
+and copy URL commands.
+
+Safe frontmatter edits are available only when Obsidian itself starts with
+`RIEBECKITE_BRIDGE_MUTATION_TOKEN` set. The managed process inherits that
+token; it is never saved or shown. Before applying a plan, separately approve
+it in a terminal that has `RIEBECKITE_BRIDGE_MUTATION_APPROVAL_TOKEN`:
+`riebeckite bridge approve <plan-id>`. The plugin cannot approve plans, recover,
+or roll back content. Without the mutation token, the edit controls remain
+unavailable.
 
 ## Install manually
 
@@ -129,7 +139,9 @@ after managed development has connected and refreshes views when its revision
 changes. These refreshes do not alter editor input, cursor, selection, or files.
 Vault scans use four workers and render the first 100 notes at a time. Safe
 Mutation remains independently protected by Bridge credentials and a short-lived
-server-side approval, but is unavailable in this integration. Real Obsidian E2E
+server-side approval. This integration reads a mutation token only from
+Obsidian's startup environment; it never stores, displays, or creates either
+secret, and approval, recovery, and rollback remain CLI-only. Real Obsidian E2E
 verification remains required before release.
 
 ## Release
